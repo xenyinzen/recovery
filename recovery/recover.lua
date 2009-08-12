@@ -7,7 +7,6 @@ require "mt_lib"
 require "localcfg"
 
 local udisk_dir = "/mnt/udisk/"
-local ldisk_dir0 = "/mnt/ldisk/"
 
 
 function FindUSBDisk( content )
@@ -80,7 +79,7 @@ function Recover( disk_size )
 	elseif disk_size == 2.0 then
 		scheme = cfg.scheme_2G
 	elseif disk_size == 160.0 then
-		scheme = cfg.scheme_160G
+		scheme = cfg.scheme_120_160G
 	end
 	
 	geometry_action = scheme.geometry_action
@@ -91,13 +90,14 @@ function Recover( disk_size )
 	print("")
 	ret = do_cmd { geometry_action }
 	if not ret then
-		print("Error! Hard disk can not be make new geometry.")
+		print("Error! Hard disk can not be made new geometry on.")
 		return 1
 	end
 	
 	print("================ Do Format ==================")
 	print("")
 	for i, v in ipairs(format_action) do
+		print('\n-------- '..v..' --------\n')
 		local ret = do_cmd { v }
 		if not ret then
 			print("Error when format.")
@@ -107,7 +107,6 @@ function Recover( disk_size )
 	
 	-- copy essential files from U disk to local disk
 	print("================ Copy Files ================")
-	print("")
 	
 	local dst_dir = {}
 	local dstp = scheme.dst_partition
@@ -124,6 +123,8 @@ function Recover( disk_size )
 
 	local tmp_dir = "/mnt/"..scheme.tmp_dir
 	lfs.mkdir(tmp_dir)
+	print("cp -rf "..udisk_dir.."* "..tmp_dir)
+	print("")
 	ret = do_cmd { "cp -rf "..udisk_dir.."* "..tmp_dir }
 	if not ret then return 1 end
 	
@@ -136,6 +137,7 @@ function Recover( disk_size )
 	local files = scheme.system_files
 	
 	for i, v in ipairs( files ) do
+		print("\n----------- tar xzvf "..v.." -C "..dst_dir[i].." --------------\n")
 		ret = do_cmd { "tar xzvf "..v.." -C "..dst_dir[i] }
 		if not ret then return 1 end
 	end	
@@ -155,8 +157,60 @@ function Recover( disk_size )
 	return 0
 end
 
+function PrintHead()
+
+	do_cmd { "clear" }
+	print("")
+	print("=====================================================================")
+	print("||                                                                 ||")
+	print("||                         START RECOVERY                          ||")
+	print("||                                                                 ||")
+	print("=====================================================================")
+	print("")
+	mt.sleep(2)
+end
+
+function PrintBigPass()
+	local big_pass = [[
+			=========================================================
+ 			|                                                       |
+			|        ########      ###      ######    ######        |
+			|        ##     ##    ## ##    ##    ##  ##    ##       |
+			|        ##     ##   ##   ##   ##        ##             |
+			|        ########   ##     ##   ######    ######        |
+			|        ##         #########        ##        ##       |
+			|        ##         ##     ##  ##    ##  ##    ##       |
+			|        ##         ##     ##   ######    ######        |
+			|                                                       |
+			=========================================================
+	]]
+	print(big_pass)
+	mt.sleep(3)
+end
+
+
+function PrintBigFailure()
+	local big_failure = [[
+			=========================================================
+			|                                                       |
+			|  ########    ###    #### ##       ######## ########   |
+			|  ##         ## ##    ##  ##       ##       ##     ##  |
+			|  ##        ##   ##   ##  ##       ##       ##     ##  |
+			|  ######   ##     ##  ##  ##       ######   ##     ##  |
+			|  ##       #########  ##  ##       ##       ##     ##  |
+			|  ##       ##     ##  ##  ##       ##       ##     ##  |
+			|  ##       ##     ## #### ######## ######## ########   |
+			|                                                       |
+			========================================================= 
+	]]
+	
+	print(big_failure)
+
+end
+
 function exception()
- 	print("Failure. Press 'Enter' to poweroff.")
+ 	PrintBigFailure()
+ 	print("Failed. Press 'Enter' to poweroff.")
 	io.read()
 	print("Now exit!")
 --	do_cmd { "poweroff" }; mt.sleep(10000);
@@ -168,6 +222,7 @@ end
 --===================================================================
 mt.sleep(10)
 do_cmd { "date -s 20090909" }
+do_cmd { "setterm -blank 0" }
 lfs.mkdir(udisk_dir)
 
 --
@@ -189,6 +244,22 @@ if lfs.attributes(extern_cfg_file) then
 	end
 end
 
+PrintHead()
+
+if cfg.checkfirst then
+	-- Check UDisk Files
+	print("================ Check UDisk Files ================")
+	print("")
+	local files = cfg.scheme_choice.system_files
+
+	for i, v in ipairs( files ) do
+		v = udisk_dir..v
+		print("\n----------- tar tzf "..v.." --------------\n")
+		ret = do_cmd { "tar tzf "..v }
+		if not ret then exception() end
+	end	
+end
+
 local fdisk_output = GetCMDOutput( "fdisk -l" )
 local disk_size = fdisk_output:match(": (%d+%.%d) GB,")
 disk_size = tonumber(disk_size)
@@ -196,6 +267,7 @@ disk_size = tonumber(disk_size)
 local ret = Recover( disk_size )
 if ret ~= 0 then exception() end
 
+PrintBigPass()
 do_cmd { "reboot" }
 --==================================================================
 -- END
