@@ -87,14 +87,13 @@ function Recover( disk_size )
 	
 	-- do geometry and format action
 	print("================ Make New Geometry ================")
-	print("")
 	ret = do_cmd { geometry_action }
 	if not ret then
 		print("Error! Hard disk can not be made new geometry on.")
 		return 1
 	end
 	
-	print("================ Do Format ==================")
+	print("\n================ Do Format ==================")
 	print("")
 	for i, v in ipairs(format_action) do
 		print('\n-------- '..v..' --------\n')
@@ -106,7 +105,7 @@ function Recover( disk_size )
 	end
 	
 	-- copy essential files from U disk to local disk
-	print("================ Copy Files ================")
+	print("\n================ Copy Files ================")
 	
 	local dst_dir = {}
 	local dstp = scheme.dst_partition
