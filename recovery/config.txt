@@ -11,24 +11,30 @@ cfg.clean = false
 
 --[[
 cfg.partitions = {
-	'Name',	'Size',	'Type',
-	-----------------------
-	1,	5120,	ext3,
-	2,	5120,	ext3,
-	3,	1024,	swap,
-	4,	NULL,	extend,
-	5,	100,	ext3,
-	6,	35000,	ext3,
-	7,	40960,	ext3,
-	8,	left,	ext3,
+
+'Name',	'Size',	'Type',		'Format'
+----------------------------------------
+1,	5120,	ext3,		Y,
+2,	5120,	ext3,		Y,
+3,	1024,	swap,		Y,
+4,	NULL,	extend,		NULL,
+5,	100,	ext3,		Y,
+6,	35000,	ext3,		Y,
+7,	40960,	ext3,		Y,
+8,	left,	ext3,		Y,
+
 }
 
 cfg.files = {
-	'Name',		'Location',	'Overwrite'
-	-------------------------------------------
-	'root.tar.gz',	'hda1',		Y,
-	'etc.tar.gz',	'hda5',		Y,
-	'home.tar.gz',	'hda6',		Y,
-	'var.tar.gz',	'hda6',		Y,
+
+'Name',		'Location',	'Overwrite'
+-------------------------------------------
+'root.tar.gz',	'hda1',		Y,
+'etc.tar.gz',	'hda5',		Y,
+'home.tar.gz',	'hda6',		Y,
+'var.tar.gz',	'hda6',		Y,
+
 }
 --]]
+
+

@@ -8,6 +8,7 @@ require "localcfg"
 
 local verbose = cfg.verbose
 
+local md5sum_t = {}
 local udisk_dir = "/mnt/udisk/"
 
 
@@ -49,6 +50,8 @@ function GetCMDOutput( cmd )
 	local fp = io.popen( cmd, "r" )
 	local content = fp:read("*a")
 	fp:close()
+	
+	if content == "" then content = nil end
 	
 	return content	
 end
@@ -136,7 +139,7 @@ function Recover( disk_size )
 		ret = do_cmd { "cp -rf "..udisk_dir.."* "..tmp_dir }
 	else
 		lfs.chdir( udisk_dir )
-		ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' *" }
+		ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' *.tar.gz" }
 		lfs.chdir( "-" )
 	end
 	if not ret then return 1 end
@@ -144,6 +147,25 @@ function Recover( disk_size )
 	-- change directory
 	lfs.chdir(tmp_dir)
 	
+	-- calculate actual md5sum value, now files are all in local disk
+	print("\nNow check the integrity of files in local disk...")
+	local files = scheme.system_files
+	for i, v in ipairs( files ) do
+		local content = GetCMDOutput( "md5sum "..v )
+		if content then
+			local value, f = content:match("(%w+)  ([%w%./]+)\n")
+			if value then
+				if value ~= md5sum_t[v] then
+					exception("Md5sum check error: "..f)
+				end
+			else
+				exception("Nil md5sum value: "..v)
+			end
+		else
+			exception("Get md5sum output error: "..v)
+		end		
+	end	
+
 	-- extract
 	print("\n=================== Extract Files ==================")
 	local files = scheme.system_files
@@ -160,7 +182,7 @@ function Recover( disk_size )
 	
 	do_cmd { "sync" }
 
-	print("======================== End =========================")
+	print(  "======================= End ========================")
 	print("")
 		
 	lfs.chdir("/")
@@ -224,9 +246,10 @@ function PrintBigFailure()
 
 end
 
-function exception()
+function exception( str )
+ 	if str then print(str) end
  	PrintBigFailure()
- 	print("Failed. Press 'Enter' to poweroff.")
+ 	print("Failed. Press 'Enter' to exit.")
 	io.read()
 	print("Now exit!")
 --	do_cmd { "poweroff" }; mt.sleep(10000);
@@ -245,7 +268,10 @@ lfs.mkdir(udisk_dir)
 -- find U disk, mount it, and copy essential files into inner disk
 --
 local ret = FindAndMountUDisk()
-if not ret then exception() end
+if not ret then exception("Mount USB Disk error.") end
+
+
+PrintHead()
 
 -- load external config file
 local extern_cfg_file = udisk_dir.."config.txt"
@@ -258,11 +284,51 @@ if lfs.attributes(extern_cfg_file) then
 			cfg.scheme_choice = cfg.scheme_120_160G
 		end
 	end
+else
+	exception("Can't find external configuration file: config.txt .")
 end
 
-PrintHead()
+-- read md5sum.txt
+local fd = io.open(udisk_dir.."md5sum.txt", 'r')
+if not fd then exception("Can't find file: md5sum.txt .") end
+local md5_file = fd:read("*a")
+fd:close()
+
+-- retrieve md5sum value of every tar.gz file
+local l = 1
+local i = 0
+local value, filename
+while l do
+	_, l, value, filename = md5_file:find("(%w+)  ([%w%.]+)\n", l)
+	if l then md5sum_t[filename] = value; i = i + 1 end
+end
+if i ~= #(cfg.scheme_choice.system_files) then
+	exception("md5sum.txt have different number of file items.")
+end
 
 if cfg.checkfirst then
+	-- calculate actual md5sum value, now files are all in usb disk
+	print("Now check the integrity of files in usb disk...")
+	local files = cfg.scheme_choice.system_files
+	for i, v in ipairs( files ) do
+		local file = udisk_dir..v
+		local content = GetCMDOutput( "md5sum "..file )
+		if content then
+			local value, f = content:match("(%w+)  ([%w%./]+)\n")
+			if value then
+				if value ~= md5sum_t[v] then
+					exception("Md5sum check error: "..f)
+				end
+			else
+				exception("Nil md5sum value: "..file)
+			end
+		else
+			exception("Get md5sum output error: "..file)
+		end		
+	end	
+end
+
+if cfg.checksecond then
 	-- Check UDisk Files
 	print("================ Check UDisk Files ================")
 	print("")
@@ -272,7 +338,7 @@ if cfg.checkfirst then
 		v = udisk_dir..v
 		print("\n----------- tar tzf "..v.." --------------\n")
 		ret = do_cmd { "tar tzf "..v }
-		if not ret then exception() end
+		if not ret then exception("Pretar list check error.") end
 	end	
 end
 
