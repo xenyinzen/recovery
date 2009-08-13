@@ -3,4 +3,32 @@
 -- Predefine
 ----------------------------------------------------------------
 cfg.disksize = 160
-cfg.checkfirst = true
+cfg.checkfirst = false
+cfg.newgeometry = true
+cfg.newformat = true
+cfg.verbose = false
+cfg.clean = false
+
+--[[
+cfg.partitions = {
+	'Name',	'Size',	'Type',
+	-----------------------
+	1,	5120,	ext3,
+	2,	5120,	ext3,
+	3,	1024,	swap,
+	4,	NULL,	extend,
+	5,	100,	ext3,
+	6,	35000,	ext3,
+	7,	40960,	ext3,
+	8,	left,	ext3,
+}
+
+cfg.files = {
+	'Name',		'Location',	'Overwrite'
+	-------------------------------------------
+	'root.tar.gz',	'hda1',		Y,
+	'etc.tar.gz',	'hda5',		Y,
+	'home.tar.gz',	'hda6',		Y,
+	'var.tar.gz',	'hda6',		Y,
+}
+--]]

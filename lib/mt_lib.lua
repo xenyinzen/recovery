@@ -166,7 +166,7 @@ function do_cmd( t )
         local ret = 0
         if command then
         if type(command) == "string" then
-                ret = os.execute(expand(command))
+                ret = os.execute(command)
         elseif type(command) == "function" then
                 if command_args then
                 	ret = command( unpack(command_args))

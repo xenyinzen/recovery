@@ -1,6 +1,9 @@
 --
 -- here is local config file
 --
+
+HO = " 1>/dev/null 2>&1"
+
 cfg = {
 	clean_after_recovery = false;
 	

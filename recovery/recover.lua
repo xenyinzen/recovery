@@ -6,6 +6,8 @@ package.cpath = package.cpath.."?.so;../?.so;../lib/?.so;../../../lib/?.so;"
 require "mt_lib"
 require "localcfg"
 
+local verbose = cfg.verbose
+
 local udisk_dir = "/mnt/udisk/"
 
 
@@ -85,27 +87,34 @@ function Recover( disk_size )
 	geometry_action = scheme.geometry_action
 	format_action = scheme.format_action
 	
+	if cfg.newgeometry then
 	-- do geometry and format action
-	print("================ Make New Geometry ================")
+	print("\n================ Make New Geometry =================")
 	ret = do_cmd { geometry_action }
 	if not ret then
 		print("Error! Hard disk can not be made new geometry on.")
 		return 1
 	end
+	end
 	
-	print("\n================ Do Format ==================")
-	print("")
+	if cfg.newformat then
+	print("\n==================== Do Format =====================")
 	for i, v in ipairs(format_action) do
-		print('\n-------- '..v..' --------\n')
-		local ret = do_cmd { v }
+		print('--> '..v)
+		if verbose then
+			ret = do_cmd { v }
+		else
+			ret = do_cmd { v..HO }
+		end
 		if not ret then
 			print("Error when format.")
 			return 1
 		end
 	end
+	end
 	
 	-- copy essential files from U disk to local disk
-	print("\n================ Copy Files ================")
+	print("\n=================== Copy Files =====================")
 	
 	local dst_dir = {}
 	local dstp = scheme.dst_partition
@@ -122,34 +131,42 @@ function Recover( disk_size )
 
 	local tmp_dir = "/mnt/"..scheme.tmp_dir
 	lfs.mkdir(tmp_dir)
-	print("cp -rf "..udisk_dir.."* "..tmp_dir)
-	print("")
-	ret = do_cmd { "cp -rf "..udisk_dir.."* "..tmp_dir }
+	print("\ncp -rf "..udisk_dir.."* "..tmp_dir)
+	if verbose then
+		ret = do_cmd { "cp -rf "..udisk_dir.."* "..tmp_dir }
+	else
+		lfs.chdir( udisk_dir )
+		ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' *" }
+		lfs.chdir( "-" )
+	end
 	if not ret then return 1 end
 	
 	-- change directory
 	lfs.chdir(tmp_dir)
 	
 	-- extract
-	print("================ Extract Files ================")
-	print("")
+	print("\n=================== Extract Files ==================")
 	local files = scheme.system_files
 	
 	for i, v in ipairs( files ) do
-		print("\n----------- tar xzvf "..v.." -C "..dst_dir[i].." --------------\n")
-		ret = do_cmd { "tar xzvf "..v.." -C "..dst_dir[i] }
+		print("\n--> tar xzf "..v.." -C "..dst_dir[i])
+		if verbose then
+			ret = do_cmd { "tar xzvf "..v.." -C "..dst_dir[i] }
+		else
+			ret = do_cmd { "bar "..v.." | tar xzf - -C "..dst_dir[i] }		
+		end
 		if not ret then return 1 end
 	end	
 	
 	do_cmd { "sync" }
 
-	print("================ End ================")
+	print("======================== End =========================")
 	print("")
 		
 	lfs.chdir("/")
 	
 	-- clean
-	if cfg.clean_after_recovery then
+	if cfg.clean then
 		do_cmd { "rm -rf "..tmp_dir.."/*" }
 	end
 			
