@@ -103,7 +103,7 @@ function Recover( disk_size )
 	if cfg.newformat then
 	print("\n==================== Do Format =====================")
 	for i, v in ipairs(format_action) do
-		print('--> '..v)
+		io.write('--> '..v.." ... ")
 		if verbose then
 			ret = do_cmd { v }
 		else
@@ -113,6 +113,7 @@ function Recover( disk_size )
 			print("Error when format.")
 			return 1
 		end
+		io.write("OK.\n")
 	end
 	end
 	
@@ -148,12 +149,12 @@ function Recover( disk_size )
 	lfs.chdir(tmp_dir)
 	
 	-- calculate actual md5sum value, now files are all in local disk
-	print("\nNow check the integrity of files in local disk...")
+	io.write("\n--> Now check the integrity of files in local disk... ")
 	local files = scheme.system_files
 	for i, v in ipairs( files ) do
 		local content = GetCMDOutput( "md5sum "..v )
 		if content then
-			local value, f = content:match("(%w+)  ([%w%./]+)\n")
+			local value, f = content:match("(%w+)  ([%w%./%-_]+)\n")
 			if value then
 				if value ~= md5sum_t[v] then
 					exception("Md5sum check error: "..f)
@@ -164,7 +165,8 @@ function Recover( disk_size )
 		else
 			exception("Get md5sum output error: "..v)
 		end		
-	end	
+	end
+	io.write("OK.\n")	
 
 	-- extract
 	print("\n=================== Extract Files ==================")
@@ -299,7 +301,7 @@ local l = 1
 local i = 0
 local value, filename
 while l do
-	_, l, value, filename = md5_file:find("(%w+)  ([%w%.]+)\n", l)
+	_, l, value, filename = md5_file:find("(%w+)  ([%w%./%-_]+)\n", l)
 	if l then md5sum_t[filename] = value; i = i + 1 end
 end
 if i ~= #(cfg.scheme_choice.system_files) then
@@ -308,13 +310,13 @@ end
 
 if cfg.checkfirst then
 	-- calculate actual md5sum value, now files are all in usb disk
-	print("Now check the integrity of files in usb disk...")
+	io.write("--> Now check the integrity of files in usb disk... ")
 	local files = cfg.scheme_choice.system_files
 	for i, v in ipairs( files ) do
 		local file = udisk_dir..v
 		local content = GetCMDOutput( "md5sum "..file )
 		if content then
-			local value, f = content:match("(%w+)  ([%w%./]+)\n")
+			local value, f = content:match("(%w+)  ([%w%./%-_]+)\n")
 			if value then
 				if value ~= md5sum_t[v] then
 					exception("Md5sum check error: "..f)
@@ -325,7 +327,8 @@ if cfg.checkfirst then
 		else
 			exception("Get md5sum output error: "..file)
 		end		
-	end	
+	end
+	io.write("OK.\n")	
 end
 
 if cfg.checksecond then

@@ -5,7 +5,7 @@
 HO = " 1>/dev/null 2>&1"
 
 cfg = {
-	clean_after_recovery = false;
+	clean = false;
 	
 	scheme_2G = {
 		geometry_action = [[
