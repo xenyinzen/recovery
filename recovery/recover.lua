@@ -6,11 +6,11 @@ package.cpath = package.cpath.."?.so;../?.so;../lib/?.so;../../../lib/?.so;"
 require "mt_lib"
 require "localcfg"
 
-local verbose = cfg.verbose
+local verbose
 
 local md5sum_t = {}
 local udisk_dir = "/mnt/udisk/"
-
+local ret
 
 function FindUSBDisk( content )
 	local u_disks = {
@@ -72,23 +72,21 @@ function FindAndMountUDisk()
 	return 0
 end
 
-function Recover( disk_size )
+function Recover()
 	local geometry_action
 	local format_action
+	local files
 	local scheme
 	local ret
 	
 	-- choose a format disk scheme
 	if cfg.scheme_choice then
 		scheme = cfg.scheme_choice
-	elseif disk_size == 2.0 then
-		scheme = cfg.scheme_2G
-	elseif disk_size == 160.0 then
-		scheme = cfg.scheme_120_160G
 	end
 	
 	geometry_action = scheme.geometry_action
 	format_action = scheme.format_action
+	files = scheme.system_files
 	
 	if cfg.newgeometry then
 	-- do geometry and format action
@@ -103,7 +101,7 @@ function Recover( disk_size )
 	if cfg.newformat then
 	print("\n==================== Do Format =====================")
 	for i, v in ipairs(format_action) do
-		io.write('--> '..v.." ... ")
+		io.write('--> '..v.." ... "); io.flush()
 		if verbose then
 			ret = do_cmd { v }
 		else
@@ -134,23 +132,41 @@ function Recover( disk_size )
 	end
 
 	local tmp_dir = "/mnt/"..scheme.tmp_dir
-	lfs.mkdir(tmp_dir)
-	print("\ncp -rf "..udisk_dir.."* "..tmp_dir)
+	-- judge whether mounted already
+	local content = GetCMDOutput( "mount" )
+	if not content:find(dstp['tmp_dir']) then
+		lfs.mkdir(tmp_dir)
+		ret = do_cmd { "mount /dev/"..dstp['tmp_dir'].." "..tmp_dir }
+		if not ret then return 1 end
+	else
+		lfs.mkdir(tmp_dir)
+	end
+	
+	-- copy
+	print("\ncp -rf "..udisk_dir.."*.tar.gz "..tmp_dir)
 	if verbose then
-		ret = do_cmd { "cp -rf "..udisk_dir.."* "..tmp_dir }
+		ret = do_cmd { "cp -rf "..udisk_dir.."*.tar.gz "..tmp_dir }
 	else
 		lfs.chdir( udisk_dir )
 		ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' *.tar.gz" }
 		lfs.chdir( "-" )
 	end
-	if not ret then return 1 end
+	if not ret then exception("Copying tar.gz file error!") end
 	
+	local fstab = files['fstab']
+	if fstab then
+		ret = do_cmd { "cp -af "..udisk_dir.."fstab* "..tmp_dir }
+		if not ret then exception("Copying fstab file error!") end
+	end
+	
+	ret = do_cmd { "cp -af "..udisk_dir.."vmlinux "..tmp_dir }
+	if not ret then exception("Copying vmlinux file error!") end
+		
 	-- change directory
 	lfs.chdir(tmp_dir)
 	
 	-- calculate actual md5sum value, now files are all in local disk
-	io.write("\n--> Now check the integrity of files in local disk... ")
-	local files = scheme.system_files
+	io.write("\n--> Now check the integrity of files in local disk... "); io.flush()
 	for i, v in ipairs( files ) do
 		local content = GetCMDOutput( "md5sum "..v )
 		if content then
@@ -170,8 +186,6 @@ function Recover( disk_size )
 
 	-- extract
 	print("\n=================== Extract Files ==================")
-	local files = scheme.system_files
-	
 	for i, v in ipairs( files ) do
 		print("\n--> tar xzf "..v.." -C "..dst_dir[i])
 		if verbose then
@@ -182,8 +196,36 @@ function Recover( disk_size )
 		if not ret then return 1 end
 	end	
 	
+	-- copy fstab
+	if fstab then
+		local index = {}
+		local indexstr = dstp['etc_location'][1]
+		local n
+		if #indexstr > 1 then
+			n = 2
+		else
+			n = 1
+		end
+		for i = 1, n do
+			index[#index + 1] = tonumber(indexstr:sub(2*i-1, 2*i-1))
+		end
+		
+		local etc_dir = {}
+		local etc_dir_str = dstp['etc_location'][2]
+		if n == 2 then
+			local l = etc_dir_str:find(" ")
+			etc_dir[1] = etc_dir_str:sub(1, l - 1)
+			etc_dir[2] = etc_dir_str:sub(l + 1, -1)
+		else
+			etc_dir[1] = etc_dir_str
+		end
+		
+		for i = 1, n do
+			do_cmd { "cp -af "..fstab.." "..dst_dir[index[i]].."/"..etc_dir[i].."fstab" }	
+		end
+	end
+	
 	do_cmd { "sync" }
-
 	print(  "======================= End ========================")
 	print("")
 		
@@ -258,6 +300,12 @@ function exception( str )
 	os.exit(1)
 end
 
+
+
+
+
+
+
 --===================================================================
 -- START
 --===================================================================
@@ -269,25 +317,61 @@ lfs.mkdir(udisk_dir)
 --
 -- find U disk, mount it, and copy essential files into inner disk
 --
-local ret = FindAndMountUDisk()
+ret = FindAndMountUDisk()
 if not ret then exception("Mount USB Disk error.") end
 
 
 PrintHead()
 
+-- find the size of local disk
+local fdisk_output = GetCMDOutput( "fdisk -l" )
+local disk_size, unit = fdisk_output:match(": ([%d%.]+) ([GM])B,")
+disk_size = tonumber(disk_size)
+
+-- choose a format disk scheme
+if unit == "G" then
+	if disk_size == 4.0 then
+		cfg.scheme_choice = cfg.scheme_2G
+	elseif disk_size == 8.0 then
+		cfg.scheme_choice = cfg.scheme_8G
+	elseif disk_size >= 120.0 and disk_size <= 200.0 then
+		cfg.scheme_choice = cfg.scheme_120_160G
+	end
+elseif unit == "M" then
+	if disk_size >= 3800 and disk_size <= 4200 then
+		cfg.scheme_choice = cfg.scheme_2G
+	elseif disk_size >= 6000 and disk_size <= 9000 then
+		cfg.scheme_choice = cfg.scheme_8G
+	elseif disk_size >= 120000 and disk_size <= 200000 then
+		cfg.scheme_choice = cfg.scheme_120_160G
+	end
+end
+
 -- load external config file
 local extern_cfg_file = udisk_dir.."config.txt"
 if lfs.attributes(extern_cfg_file) then
 	dofile(extern_cfg_file)
+	-- if outer setting has item disksize, use user's config
 	if cfg.disksize then
-		if cfg.disksize <= 8 then
+		if cfg.disksize <= 4 then
 			cfg.scheme_choice = cfg.scheme_2G
-		elseif cfg.disksize >= 120 and cfg.disksize <= 160 then
+		elseif cfg.disksize == 8 then
+			cfg.scheme_choice = cfg.scheme_8G
+		elseif cfg.disksize >= 120 and cfg.disksize <= 200 then
 			cfg.scheme_choice = cfg.scheme_120_160G
 		end
 	end
 else
 	exception("Can't find external configuration file: config.txt .")
+end
+
+--
+-- before recovery, we want a memory test
+--
+if cfg.do_pre_memory_test then
+	print("\n--> Pre Memory Test")
+	ret = do_cmd { "memtester_little 960 1" }
+	if not ret then exception("Memory test is failed. Error!") end
 end
 
 -- read md5sum.txt
@@ -310,7 +394,7 @@ end
 
 if cfg.checkfirst then
 	-- calculate actual md5sum value, now files are all in usb disk
-	io.write("--> Now check the integrity of files in usb disk... ")
+	io.write("--> Now check the integrity of files in usb disk... "); io.flush()
 	local files = cfg.scheme_choice.system_files
 	for i, v in ipairs( files ) do
 		local file = udisk_dir..v
@@ -331,6 +415,15 @@ if cfg.checkfirst then
 	io.write("OK.\n")	
 end
 
+-- Check whether exist correct fstab file on the usb disk
+local files = cfg.scheme_choice.system_files
+local fstab = files['fstab']
+if fstab then
+	local fd = io.open(udisk_dir..fstab, 'r')
+	if not fd then exception("Can't find file: "..fstab.." on the usb disk.") end
+	fd:close()
+end
+
 if cfg.checksecond then
 	-- Check UDisk Files
 	print("================ Check UDisk Files ================")
@@ -345,11 +438,8 @@ if cfg.checksecond then
 	end	
 end
 
-local fdisk_output = GetCMDOutput( "fdisk -l" )
-local disk_size = fdisk_output:match(": (%d+%.%d) GB,")
-disk_size = tonumber(disk_size)
-
-local ret = Recover( disk_size )
+verbose = cfg.verbose
+local ret = Recover()
 if ret ~= 0 then exception() end
 
 PrintBigPass()

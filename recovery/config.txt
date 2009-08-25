@@ -2,8 +2,10 @@
 ----------------------------------------------------------------
 -- Predefine
 ----------------------------------------------------------------
-cfg.disksize = 160
-cfg.checkfirst = false
+-- switch on cfg.disksize=2 if want to recover testing system
+cfg.disksize = 2
+cfg.do_pre_memory_test = true
+cfg.checkfirst = true
 cfg.newgeometry = true
 cfg.newformat = true
 cfg.verbose = false
