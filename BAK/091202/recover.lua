@@ -8,11 +8,9 @@ require "localcfg"
 
 local md5sum_t = {}
 local md5sum_pattern = "(%w+)  ([%w%./%-_]+)[ \t\r]*\n"
+local udisk_dir = "/mnt/udisk/"
 local external_config = 'config.txt'
 local localdisk = "/dev/hda"
-local localdir = "/mnt/"
-local udisk_dir = localdir.."/udisk/"
-local MPNUM = 4
 local ret
 
 
@@ -92,7 +90,6 @@ function FindAndMountUDisk()
 end
 
 function Recover()
-	local par = Cfg.default_partitions
 	local sfarg = Cfg.sfdisk_arg
 	local faction = Cfg.format_table
 	local files = Cfg.files_table
@@ -115,10 +112,10 @@ function Recover()
 		if Cfg.verbose then
 			-- if permit format
 			if v[2] then
-				ret = do_cmd { v[1] }
+				ret = do_cmd { v }
 			end
 		else
-			ret = do_cmd { v[1]..HO }
+			ret = do_cmd { v..HO }
 		end
 		if not ret then
 			print("Error! Some error occured when format.")
@@ -127,41 +124,34 @@ function Recover()
 		io.write("OK.\n")
 	end
 	
-	-- mount essential partitions to localdir
-	-- mount root fs
-	local main_file = ""
-	for i, v in ipairs(Cfg.partitions) do
-		if v[MPNUM] == '/' then
-			main_file = v[MPNUM+1]
-			-- mount root partition
-			ret = do_cmd { "mount "..localdisk..i.." "..localdir }
+	-- copy essential files from U disk to local disk
+	print("\n=================== Copy Files =====================")
+	local dst_dir = {}
+	for i, v in pairs(files) do
+		dst_dir[i] = "/mnt/hda"..v[2]
+		-- equal to mkdir -p, so if directory already exists, this statement have no effect
+		lfs.mkdir(dst_dir[i])
+		-- judge whether mounted already
+		local content = GetCMDOutput( "mount" )
+		if not content:find(dst_dir[i]) then
+			ret = do_cmd { "mount /dev/hda"..v[2].." "..dst_dir[i] }
 			if not ret then return -1 end
 		end
 	end
-	
-	-- create some directories, and mount other partitions
-	for i, v in ipairs(Cfg.partitions) do
-		if v[MPNUM] then
-			local subdir = v[MPNUM]
-			if subdir ~= '/' then
-				local dir = localdir..subdir
-				lfs.mkdir(dir)
-				-- mount other partitions
-				ret = do_cmd { "mount "..localdisk..i.." "..dir }
-				if not ret then return -1 end
-			end
-		
-		end	
-	end	
-	-- create backup directory
-	local tmp_dir = localdisk..par['tmp_dir']
+
+	local tmp_par = Cfg.default_partitions['tmp_partition']
+	local tmp_m = "/mnt/hda"..tmp_par
+	local tmp_dir = "/mnt/hda"..tmp_par..'/'..Cfg.default_partitions['tmp_dir']
+	-- judge whether mounted already
+	local content = GetCMDOutput( "mount" )
+	if not content:find(tmp_m) then
+		lfs.mkdir(tmp_m)
+		ret = do_cmd { "mount /dev/hda"..tmp_par.." "..tmp_m }
+		if not ret then return -1 end
+	end
 	ret = lfs.mkdir(tmp_dir)
 	if not ret then return -1 end
 	
-	
-	-- copy essential files from U disk to local disk
-	print("\n=================== Copy Files =====================")
-
 	-- copy
 	for i, v in pairs(files) do
 		local cmd = "\ncp -f "..udisk_dir.." "..v[1].." "..tmp_dir
@@ -205,12 +195,11 @@ function Recover()
 	-- extract
 	print("\n=================== Extract Files ==================")
 	for i, v in pairs( files ) do
-		local dir = localdir..v[2]
-		print("\n--> tar xzf "..v[1].." -C "..dir)
+		print("\n--> tar xzf "..v[1].." -C "..dst_dir[i])
 		if Cfg.verbose then
-			ret = do_cmd { "tar xzvf "..v[1].." -C "..dir }
+			ret = do_cmd { "tar xzvf "..v[1].." -C "..dst_dir[i] }
 		else
-			ret = do_cmd { "bar "..v[1].." | tar xzf - -C "..dir }		
+			ret = do_cmd { "bar "..v[1].." | tar xzf - -C "..dst_dir[i] }		
 		end
 		if not ret then return -1 end
 	end	
@@ -282,8 +271,9 @@ end
 
 function collect_info()
 
-	local par = Cfg.default_partitions
+	local defpar = Cfg.default_partitions
 	local args = ""
+	local n = table.maxn(defpar)
 	
 	local r_format_types = {}
 	for _, v in ipairs(format_types) do
@@ -291,12 +281,16 @@ function collect_info()
 	end
 	
 	-- arguments check
-	for i = 1, #par do
-		local size = par[i][1]
-		local format_type = par[i][2]
-		local format = par[i][3]
+	for i = 1, (n/4-1) do
+		local index = defpar[1 + i*4]
+		local size = defpar[2 + i*4]
+		local format_type = defpar[3 + i*4]
+		local format = defpar[4 + i*4]
 		
-		-- column one
+		if type(index) ~= 'number' then
+			exception("Error! One of the index in column Num is not number.")
+		end
+		
 		if type(size) ~= 'number' 
 		and size ~= 'NULL' 
 		and size ~= 'rest' 
@@ -304,28 +298,24 @@ function collect_info()
 			exception("Error! One of the size in column Size is not number, NULL, or rest.")
 		end
 		
-		-- column two
 		if not r_format_types[format_type] then
 			exception("Error! One of the type of format in column Type is not right. \nOnly ext2, ext3, swap, extend is permitted.")	
 		end 
 		
-		-- column three
 		if format ~= 'Y' and format ~= 'N' and format ~= 'NULL' then
 			exception("Error! One of the value in column Format is not right. \nOnly Y, N, NULL are permitted.")
 		end
-		
-		-- the rest columns must all be string
-		-- so don't need to check them  
 	
 	end
 	-----------------------------------------------------------------------
 	-- The following codes don't need to judge the exception
 	-----------------------------------------------------------------------
 	-- 
-	for i = 1, #par do
-		local size = par[i][1]
-		local format_type = par[i][2]
-		local format = par[i][3]
+	for i = 1, (n/4-1) do
+		local index = defpar[1 + i*4]
+		local size = defpar[2 + i*4]
+		local format_type = defpar[3 + i*4]
+		local format = defpar[4 + i*4]
 	
 		-- form sfdisk_arg
 		if type(size) == 'number' then
@@ -346,10 +336,11 @@ function collect_info()
 	Cfg.sfdisk_arg = args
 	
 	-- next, we are going to form format_table: have two columns, only record real parititions 
-	for i = 1, #par do
-		local size = par[i][1]
-		local format_type = par[i][2]
-		local format = par[i][3]
+	for i = 1, (n/4-1) do
+		local index = defpar[1 + i*4]
+		local size = defpar[2 + i*4]
+		local format_type = defpar[3 + i*4]
+		local format = defpar[4 + i*4]
 	
 		-- form format_table
 		if format_type == 'extend' then
@@ -388,23 +379,21 @@ function collect_info()
 	end
 	
 	-- next we will form files_table: have two columns, and only record files will be extracted
-	local file_count = 0
-	for i = 1, #par do
-		local v = par[i]
-		local n = #v
-		-- collect files
-		if n > MPNUM then
-			for j = MPNUM+1, n do
-				file_count = file_count + 1
-				Cfg.files_table[file_count] = {}
-				Cfg.files_table[file_count][1] = v[j]
-				Cfg.files_table[file_count][2] = localdir..v[MPNUM]
-			end		
+	n = table.maxn(Cfg.files)
+	for i = 1, (n/3-1) do
+		local name = Cfg.files[1+i*3]
+		local par = Cfg.files[2+i*3]
+		local extract = Cfg.files[3+i*3]
+		
+		if extract == 'Y' then
+			Cfg.files_table[i] = {}
+			Cfg.files_table[i][1] = name
+			Cfg.files_table[i][2] = par
 		end
-				
 	end
 
 end
+
 
 --===================================================================
 -- START
@@ -436,22 +425,17 @@ end
 -- load external config file
 local extern_cfg_file = udisk_dir..external_config
 if lfs.attributes(extern_cfg_file) then
-	-- here, if config.txt has error in it, dofile will report error and exit immediately
 	dofile(extern_cfg_file)
-	
 	-- if external disksize is smaller than internal disksize, go ahead normally
 	if Cfg.disksize <= real_disksize then
 		-- after this function, the config table has been transformed as the internal expresstion
-		-- Cfg.default_partitions
-		-- Cfg.sfdisk_arg
-		-- Cfg.format_table
-		-- Cfg.files_table
 		collect_info()		
 	else
 		exception("The disksize specified in config.txt is too big.")
+	
 	end
 else
-	exception("Can't find external configuration file: config.txt.")
+	exception("Can't find external configuration file: config.txt .")
 end
 
 --
@@ -465,24 +449,26 @@ end
 
 -- read md5sum.txt
 local fd = io.open(udisk_dir.."md5sum.txt", 'r')
-if not fd then exception("Can't find file: md5sum.txt.") end
+if not fd then exception("Can't find file: md5sum.txt .") end
 local md5_file = fd:read("*a")
 fd:close()
 
--- retrieve md5sum value of every tar.gz file, files in md5sum can be more than actual file number
+-- retrieve md5sum value of every tar.gz file
 local l = 1
+local i = 0
 local value, filename
 while l do
 	_, l, value, filename = md5_file:find(md5sum_pattern, l)
-	if l then 
-		md5sum_t[filename] = value
-	end
+	if l then md5sum_t[filename] = value; i = i + 1 end
+end
+if i ~= #(Cfg.files)/3-1 then
+	exception("md5sum.txt have different number of file items.")
 end
 
 if Cfg.check1 then
 	-- calculate actual md5sum value, now files are all in usb disk
 	io.write("--> Now check the integrity of files in usb disk... "); io.flush()
-	local files = Cfg.files_table
+	local files = Cfg.files
 	for i, v in ipairs( files ) do
 		local file = udisk_dir..v
 		local content = GetCMDOutput( "md5sum "..file )
@@ -496,7 +482,7 @@ if Cfg.check1 then
 				exception("Nil md5sum value: "..file)
 			end
 		else
-			exception("No this file? : "..file)
+			exception("Get md5sum output error: "..file)
 		end		
 	end
 	io.write("OK.\n")	
@@ -507,7 +493,8 @@ local ret = Recover()
 if ret ~= 0 then exception() end
 
 PrintBigPass()
--- do_cmd { "reboot" }
+do_cmd { "reboot" }
 --==================================================================
 -- END
 --==================================================================
+

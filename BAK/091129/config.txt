@@ -1,0 +1,45 @@
+
+----------------------------------------------------------------
+-- Predefine
+----------------------------------------------------------------
+-- switch on cfg.disksize=2 if want to recover testing system
+cfg.disksize = 2
+cfg.do_pre_memory_test = true
+cfg.checkfirst = true
+cfg.newgeometry = true
+cfg.newformat = true
+cfg.verbose = false
+cfg.clean = false
+
+--[[	
+--unit is 'M'
+
+cfg.partitions = {
+
+'Num',	'Size',	'Type',		'Format'
+----------------------------------------
+1,	5120,	ext3,		Y,
+2,	5120,	ext3,		Y,
+3,	1024,	swap,		Y,
+4,	NULL,	extend,		NULL,
+5,	100,	ext3,		Y,
+6,	35000,	ext3,		Y,
+7,	40960,	ext3,		Y,
+8,	rest,	ext3,		Y,
+
+}
+
+cfg.files = {
+
+'Name',		'Partition',	'Overwrite'
+-------------------------------------------
+'root.tar.gz',	1,		Y,
+'etc.tar.gz',	5',		Y,
+'home.tar.gz',	6,		Y,
+'var.tar.gz',	6,		Y,
+
+}
+
+--]]
+
+
