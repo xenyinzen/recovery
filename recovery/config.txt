@@ -1,20 +1,11 @@
 
 ----------------------------------------------------------------
--- Predefine
-----------------------------------------------------------------
-Cfg.disksize = 160
-Cfg.premem = false
-Cfg.check1 = true
-Cfg.verbose = false
-Cfg.clean = true
-
-----------------------------------------------------------------
 -- Partition table
 -- Note: Size unit is 'M'
 ----------------------------------------------------------------
 Cfg.partitions = {
 
-['Partition'] 	= {'Size',	'Type', 	'Format'	"MountPoint",	"Files"		};
+['Partition'] 	= {'Size',	'Type', 	'Format',	"MountPoint",	"Files",	};
 -------------------------------------------------------------------------------------------------
 [1]		= { 5120, 	'ext3', 	'Y', 		"/boot", 			};
 [2]		= { 5120,	'ext3',		'Y' 						};
@@ -25,8 +16,19 @@ Cfg.partitions = {
 [7]		= { 40960,	'ext3',		'Y', 		"/usr/share", 			};
 [8]		= { 'rest',	'ext3',		'Y',						};
 
-['tmp_partition'] = 2,
-['tmp_dir'] = 'backup',
-
+['Backup'] = 2;
 }
+
+Cfg.default_partitions = Cfg.partitions
+
+----------------------------------------------------------------
+-- Other configuration
+-- 
+----------------------------------------------------------------
+
+Cfg.OSFAB_NAME = "OSFab-20091204.img"
+Cfg.MACHINE_TYPE = "yeeloong"
+Cfg.SYSTEM_VERSION	 = ""
+
+
 
