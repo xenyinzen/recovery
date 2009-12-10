@@ -8,6 +8,7 @@ Cfg = {
 	format_types = {
 		'ext2',
 		'ext3',
+		'fat',
 		'extend',
 		'swap',
 	};

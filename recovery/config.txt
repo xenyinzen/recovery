@@ -5,17 +5,16 @@
 ----------------------------------------------------------------
 Cfg.partitions = {
 
-['Partition'] 	= {'Size',	'Type', 	'Format',	"MountPoint",	"Files",	};
+['Partition'] 	= {'Size',	'Type', 	'Format',	"MountPoint",	"Files"		};
 -------------------------------------------------------------------------------------------------
-[1]		= { 5120, 	'ext3', 	'Y', 		"/boot", 			};
-[2]		= { 5120,	'ext3',		'Y' 						};
-[3]		= { 1024,	'swap',		'Y', 		"/", 		"root.tar.gz", 	}; 
-[4]		= { 'NULL',	'extend',	'NULL'	 					};
-[5]		= { 100,	'ext3',		'Y' 						};
-[6]		= { 35000,	'ext3',		'Y', 		"/usr",  	"home.tar.gz", "var.tar.gz", };
-[7]		= { 40960,	'ext3',		'Y', 		"/usr/share", 			};
-[8]		= { 'rest',	'ext3',		'Y',						};
+[1]		= { 100, 	'ext3', 	'Y', 		 				};
+[2]		= { 5120,	'ext3',		'Y', 		 				};
+[3]		= { 2048,	'swap',		'Y', 		 				};
+[4]		= { 'NULL',	'extend',	'NULL', 	 				};
+[5]		= { 30720,	'ext3',		'Y', 		'/',		'basesys-20091205.tar.gz' };
+[6]		= { 'rest',	'ext3',		'Y', 		'/home',			};
 
+['Boot'] = 1;
 ['Backup'] = 2;
 }
 
@@ -25,10 +24,6 @@ Cfg.default_partitions = Cfg.partitions
 -- Other configuration
 -- 
 ----------------------------------------------------------------
-
 Cfg.OSFAB_NAME = "OSFab-20091204.img"
-Cfg.MACHINE_TYPE = "yeeloong"
-Cfg.SYSTEM_VERSION	 = ""
-
-
+Cfg.SYSTEM_VERSION = "edu"
 
