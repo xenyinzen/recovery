@@ -13,22 +13,16 @@ Cfg = {
 		'swap',
 	};
 	
-	reco_U = false,
-	reco_D = false,
-	reco_L = false,
 	
-	whole_recover = false,
-	system_recover = false,
-	user_recover = false,
-	
-	new_partition = false,
-	
-	disksize = 60,
+	disksize = 0,
 	premem = false,
 	check1 = true,
 	check2 = true,
 	verbose = false,
 	clean = false,
+	boot_U = true,
+	boot_D = true,
+	boot_L = true,
 	
 	sfdisk_arg = [[]],
 	format_table = {},

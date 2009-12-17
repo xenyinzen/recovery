@@ -1,0 +1,40 @@
+
+*** These modified files were found in JOE when it aborted on Thu Dec 17 13:02:24 2009
+*** JOE was aborted by UNIX signal 1
+
+*** File '(Unnamed)'
+STK_Window
+return 0
+header_size
+mode
+Cfg
+Cfg
+i
+println
+print
+print
+
+*** File '(Unnamed)'
+STK_MsgBoxCalcDisplayLineWindow
+STK_MsgBoxCalcDisplayLineWindow
+font
+tangg
+mount
+progress
+draw_progressbar
+font
+font
+collect
+
+*** File '(Unnamed)'
+recover.lua
+recover.lua
+recover.lua
+/etc/apt/sources.list
+/etc/network/interfaces
+/etc/apt/sources.list
+run
+/etc/X11/xorg.conf
+1.txt
+recover.lua
+config.txt

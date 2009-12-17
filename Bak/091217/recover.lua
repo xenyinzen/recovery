@@ -13,16 +13,53 @@ local localdisk = "/dev/hda"
 local localdir = "/mnt/"
 local rootdir = "/root"
 local udisk_dir = rootdir.."/udisk/"
-local ldisk_dir = rootdir.."/ldisk/"
-local mount_dir
 local backup = "/backup/"
-local home_backup = "home_backup.tar.gz"
 local MPNUM = 4
 local ret = 0
+
 
 local sfdisk_prefix = [[
 sfdisk -uM /dev/hda 1>/dev/null 2>&1 <<EOF
 ]]
+
+-- USB ports on yeeloong
+function FindUSBDisk( content )
+	local u_disks = {
+	        [1] = "ID_PATH=pci-0000:00:0e.5-usb-0:2:1.0-scsi-0:0:0:0",
+	        [2] = "ID_PATH=pci-0000:00:0e.5-usb-0:3:1.0-scsi-0:0:0:0",
+	        [3] = "ID_PATH=pci-0000:00:09.1-usb-0:2:1.0-scsi-0:0:0:0",
+	        [4] = "ID_PATH=pci-0000:00:09.0-usb-0:2:1.0-scsi-0:0:0:0",
+        }
+        local l = 1
+        local block_start, l, dev, part = content:find("block@(sd%a)@(sd%a%d)\n", l)
+        if block_start > 0 then block_start = block_start - 3 end
+        
+        local block_end = content:find("\n\n", l)
+        if block_end > 0 then block_end = block_end - 1 end
+        
+        local subblock = content:sub(block_start, block_end)
+        
+        if #subblock > 0 then 
+                str = subblock:match("(ID_PATH=%S+)\n")
+        	if str then
+			for i, v in ipairs(u_disks) do
+				if str:upper() == v:upper() then
+				      return '/dev/'..dev, '/dev/'..part, i                         
+				end
+			end
+			
+			print("Can't find matched pci serials number.")
+			printMsg("找不到匹配的PCI设备号！")
+			return -1
+		end
+        else
+		print("Can't find USB disk.")
+		printMsg("找不到U盘！")
+                return -1
+        end
+        
+        return 0
+end
 
 function GetCMDOutput( cmd )
 	local fp = io.popen( cmd, "r" )
@@ -32,6 +69,42 @@ function GetCMDOutput( cmd )
 	if content == "" then content = nil end
 	
 	return content	
+end
+
+function FindAndMountUDisk()
+	local dev, part
+--[[	
+	-- for yeeloong only
+	local content = GetCMDOutput( "udevinfo --export-db" )
+	if content ~= nil and content ~= "" then
+		dev, part = FindUSBDisk(content)
+	end
+--]]	
+	-- here, notice different filesystem type: ext2, or fat
+	-- for yeeloong, fuloong, and linglong
+
+	part = "/dev/sda1"
+	local ret = os.execute( "mount "..part.." "..udisk_dir )
+	if ret ~= 0 then
+		part = "/dev/sda"
+		ret = os.execute( "mount "..part.." "..udisk_dir )
+		if ret ~= 0 then 
+			part = "/dev/sdb1"			
+			ret = os.execute( "mount "..part.." "..udisk_dir )
+			if ret ~= 0 then
+				part = "/dev/sdb"
+				ret = os.execute( "mount "..part.." "..udisk_dir )
+				if ret ~= 0 then
+					print("mount udisk failed."); 
+					printMsg("挂载U盘失败！");
+					return -1 
+				end			
+			end	
+		end
+		
+	end
+
+	return 0
 end
 
 function check_md5sum(dir)
@@ -71,26 +144,17 @@ function Recover()
 		return -1
 	end
 	
-	-- if boot from U disk
-	if Cfg.reco_U and Cfg.whole_recover then
-		-- only recover from U disk and whole recover need to do partitions 
-		Cfg.new_partition = true	
+	-- do geometry and format action
+	print("\n================ Make New Geometry =================")
+	printMsg("开始分区……")
+	ret = do_cmd { sfdisk_prefix..sfarg }
+	if not ret then
+		print("Error! Hard disk can not be divided.")
+		printMsg("出错，磁盘无法分区！")
+		return -1
 	end
+	printMsg("分区完成。")
 	
-	if Cfg.new_partition then
-		-- do partition and format action
-		print("\n================ Make New Partitions =================")
-		printMsg("开始分区……")
-		ret = do_cmd { sfdisk_prefix..sfarg }
-		if not ret then
-			print("Error! Hard disk can not be divided.")
-			printMsg("出错，磁盘无法分区！")
-			return -1
-		end
-		printMsg("分区完成。")
-	end
-	
-	-- whether do really format depends on the second element in each table of faction
 	print("\n==================== Do Format =====================")
 	printMsg("开始格式化……")
 	for i, v in pairs(faction) do
@@ -101,9 +165,7 @@ function Recover()
 				ret = do_cmd { v[1] }
 			end
 		else
-			if v[2] then
-				ret = do_cmd { v[1]..HO }
-			end
+			ret = do_cmd { v[1]..HO }
 		end
 		if not ret then
 			print("Error! Some error occured when format.")
@@ -137,18 +199,15 @@ function Recover()
 				ret = do_cmd { "mount "..localdisk..i.." "..dir }
 				if not ret then print("mount other partitions failed."); printMsg("挂载其它分区失败！"); return -1 end
 			end
+		
 		end	
 	end	
-
 	-- create backup directory
 	local tmp_dir = localdir..backup
 	ret = lfs.mkdir(tmp_dir)
 	if not ret then print("make tmp dir failed."); printMsg("创建备份目录失败！"); return -1 end
 	if par['Backup'] then
 		local backupdev = localdisk..par['Backup']
-		-- ATTENTION: 
-		-- if recover from local disk
-		-- /dev/hda2 now have been mounted for twice, to /root/ldisk and /mnt/backup
 		ret = do_cmd { "mount "..backupdev.." "..tmp_dir }
 		if not ret then 
 			print("mount backup device failed. oh...");
@@ -157,56 +216,53 @@ function Recover()
 	-- mount tmpfs
 	do_cmd { "mount none -t tmpfs /tmp" }
 	
-	-- if recover from U disk, do copying files here
-	if Cfg.reco_U then
-		-- copy essential files from U disk to local disk
-		print("\n=================== Copy Files =====================")
-		printMsg("拷贝系统文件到磁盘……")
-		-- copy
-		for i, v in pairs(files) do
-			local cmd = "\ncp -f "..udisk_dir..v[1].." "..tmp_dir
-			print(cmd)
-		
-			if Cfg.verbose then
-				ret = do_cmd { cmd }
-			else
-				lfs.chdir( udisk_dir )
-				ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' "..v[1] }
-				lfs.chdir( "-" )
-			end
-		end
-		if not ret then print("Copying data file error!"); printMsg("拷贝系统文件时出错！"); return -1 end
-		
-		local osfab = Cfg.OSFAB_NAME or "OSFab.img"
-		print("Copy osfab file.")
-		printMsg("拷贝组件映像文件到磁盘……")
-		lfs.chdir( udisk_dir )
-		ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' "..osfab }
-		if not ret then
-			print("copy osfab failed.")
-			printMsg("拷贝组件映像文件失败！")
-			return -1
-		end
-		-- copy vmlinux, config.txt, boot.cfg and other files to disk
-		do_cmd { "cp -a vmlinux "..tmp_dir }
-		do_cmd { "cp -a vmlinuz "..tmp_dir }
-		do_cmd { "cp -a config.txt "..tmp_dir }
-		do_cmd { "cp -a boot.cfg "..tmp_dir }
-		do_cmd { "cp -a md5sum.txt "..tmp_dir }
-		do_cmd { "sync" }
-		lfs.chdir( "/" )
-		printMsg("组件映像文件拷贝完成。")
-		
-		-- Umount the usb disk.
-		ret = do_cmd { "umount "..udisk_dir }
-		if not ret then
-			print("Umount USB disk failed.")
+	-- copy essential files from U disk to local disk
+	print("\n=================== Copy Files =====================")
+	printMsg("拷贝系统文件到磁盘……")
+	-- copy
+	for i, v in pairs(files) do
+		local cmd = "\ncp -f "..udisk_dir..v[1].." "..tmp_dir
+		print(cmd)
+	
+		if Cfg.verbose then
+			ret = do_cmd { cmd }
 		else
-			print("**You can take off the USB disk**")
-			printMsg("**现在可以拨出U盘了**")
+			lfs.chdir( udisk_dir )
+			ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' "..v[1] }
+			lfs.chdir( "-" )
 		end
 	end
+	if not ret then print("Copying data file error!"); printMsg("拷贝系统文件时出错！"); return -1 end
 	
+	local osfab = Cfg.OSFAB_NAME or "OSFab.img"
+	print("Copy osfab file.")
+	printMsg("拷贝组件映像文件到磁盘……")
+	lfs.chdir( udisk_dir )
+	ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' "..osfab }
+	if not ret then
+		print("copy osfab failed.")
+		printMsg("拷贝组件映像文件失败！")
+		return -1
+	end
+	-- copy vmlinux, config.txt, boot.cfg and other files to disk
+	do_cmd { "cp -a vmlinux "..tmp_dir }
+	do_cmd { "cp -a vmlinuz "..tmp_dir }
+	do_cmd { "cp -a config.txt "..tmp_dir }
+	do_cmd { "cp -a boot.cfg "..tmp_dir }
+	do_cmd { "cp -a md5sum.txt "..tmp_dir }
+	do_cmd { "sync" }
+	lfs.chdir( "/" )
+	printMsg("组件映像文件拷贝完成。")
+	
+	-- Umount the usb disk.
+	ret = do_cmd { "umount "..udisk_dir }
+	if not ret then
+		print("Umount USB disk failed.")
+	else
+		print("**You can take off the USB disk**")
+		printMsg("**现在可以拨出U盘了**")
+	end
+
 	-- change directory
 	ret = lfs.chdir(tmp_dir)
 	if not ret then print("change directory to tmp_dir failed."); printMsg("切换到备份目录失败！"); return -1 end
@@ -231,16 +287,13 @@ function Recover()
 	printMsg("解压系统文件……")
 	for i, v in pairs( files ) do
 		local dir = v[2]
-		-- as long as flag is true, it extracts
-		if v[3] then
-			print("\n--> tar xzf "..v[1].." -C "..dir)
-			if Cfg.verbose then
-				ret = do_cmd { "tar xzvf "..v[1].." -C "..dir }
-			else
-				ret = do_cmd { "bar "..v[1].." | tar xzf - -C "..dir }		
-			end
-			if not ret then print("tar error."); printMsg("解压出错！"); return -1 end
+		print("\n--> tar xzf "..v[1].." -C "..dir)
+		if Cfg.verbose then
+			ret = do_cmd { "tar xzvf "..v[1].." -C "..dir }
+		else
+			ret = do_cmd { "bar "..v[1].." | tar xzf - -C "..dir }		
 		end
+		if not ret then print("tar error."); printMsg("解压出错！"); return -1 end
 	end	
 
 	do_cmd { "sync" }
@@ -304,11 +357,12 @@ function Recover()
 		fd:write("\targs console=tty no_auto_cmd quiet root=/dev/hda"..(main_i or 1).." machtype="..(bc.machtype or "yeeloong").." "..(bc.res or ""))
 		fd:close()
 	end
-	
+		
 	do_cmd { "sync" }	
-	print("======================= Main Body End ========================")
+--	lfs.chdir("/")
+	print(  "======================= Main Body End ========================")
 	
-	-- clean, dangerous!
+	-- clean
 	if Cfg.clean then
 		do_cmd { "rm -rf "..tmp_dir.."/*" }
 	end
@@ -438,15 +492,6 @@ function collect_info()
 	-- till now, sfdisk_arg has been formed
 	Cfg.sfdisk_arg = args
 	
-	local root_i = 0
-	local home_i = 0
-	for i, v in ipairs(par) do
-		if v[MPNUM] == '/' then	main_i = i end
-		if v[MPNUM] == '/home' then home_i = i end
-	end
-	-- we must consider the partition of /home is the same to /
-	if home_i == 0 then home_i = root_i end
-	
 	-- next, we are going to form format_table: have two columns, only record real parititions 
 	for i = 1, #par do
 		local size = par[i][1]
@@ -487,29 +532,9 @@ function collect_info()
 				Cfg.format_table[i][2] = false
 			end
 		end
-		
-		-- if we boot from local disk, we won't format the second partition
-		if Cfg.reco_D and i == par.Backup then
-			Cfg.format_table[i][2] = false	
-		end
-		-- if we use system recovery mode, we won't format the /home partition
-		if Cfg.system_recover and i == home_i then
-			Cfg.format_table[i][2] = false
-		end
-		-- if we use user recovery mode, we only format the /home partition
-		if Cfg.user_recover and i ~= home_i then
-			Cfg.format_table[i][2] = false
-		end
-		
-		--[[-- if in user recovery mode, and adopt the rm method, we won't format any partition, default commented
-		if Cfg.user_recover then
-			Cfg.format_table[i][2] = false
-		end
-		--]]
 	end
 	
-	-- next we will form files_table: have three columns, 
-	-- we should use some method to determine what package will be extracted
+	-- next we will form files_table: have two columns, and only record files will be extracted
 	local file_count = 0
 	for i = 1, #par do
 		local v = par[i]
@@ -521,35 +546,37 @@ function collect_info()
 				Cfg.files_table[file_count] = {}
 				Cfg.files_table[file_count][1] = v[j]
 				Cfg.files_table[file_count][2] = localdir..v[MPNUM]..'/'
-				-- acoording to current status to determin how many packages should be extracted
-				-- these two mode need extract the base system package and the components package
-				if Cfg.whole_recover or Cfg.system_recover then
-					Cfg.files_table[file_count][3] = true
-				-- user_recover only extract home_backup.tar.gz to /home
-				elseif Cfg.user_recover then
-					Cfg.files_table[file_count][3] = false
-				end
 			end		
 		end
+				
 	end
-
-	-- check the existance of other useful files in /mnt/backup
-	-- first 'home_backup.tar.gz'
-	if Cfg.user_recover then
-		local file = localdir..backup..home_backup
-		if lfs.attributes(file) then
-			file_count = file_count + 1
-			Cfg.files_table[file_count][1] = home_backup
-			Cfg.files_table[file_count][2] = localdir..'/home/'
-			Cfg.files_table[file_count][3] = true
+	
+--[[	-- next we will choose machine type boot cfg
+	local fd = io.open(udisk_dir.."boot.cfg", "r")
+	if fd then
+		content = fd:read("*a")
+		if content then
+			-- clear comment lines
+			content = content:gsub("%#.-\n", "")
+			-- collect info
+			--title = content:match("title (.-)\n")
+			title = Cfg.SYSTEM_NAME or "Cocreate Linux Desktop for Loongson"
+			machtype = content:match("machtype=([%w_%-]+)")
+			res = content:match("video=[%a%:]*%d+[xX]%d+%-%d%d%@%d%d")
+			Cfg.default_bootcfg = {}
+			Cfg.default_bootcfg.title = title
+			Cfg.default_bootcfg.machtype = machtype
+			Cfg.default_bootcfg.res = res
 		end
+		fd:close()
+	else
+		print("Missing boot.cfg file on usb disk?")
+		printMsg("缺少机器类型配置: boot.cfg?")
+	
+		return -1
 	end
-	-- more other files
-	--
-	--
-	--
-	
-	
+--]]
+
 	-- next we will choose machine type boot cfg
 	local fd = io.open("/proc/cmdline", "r")
 	if fd then
@@ -579,75 +606,20 @@ function collect_info()
 	return 0
 end
 
-function InstallComponents()
-	-- now, we define only in the case of whold recover, it needs to install components
-	if Cfg.whole_recover then
-		print("Next we will install some components, please wait by patience...")
-		printMsg("下面安装组件，可能需要几分钟，请耐心等待。")
-		-- action for OSFab image
-		local osfab = Cfg.OSFAB_NAME
-		local machine = Cfg.default_bootcfg.machtype
-		local version = Cfg.SYSTEM_VERSION
-		local resolution = Cfg.default_bootcfg.res
-		local backup_dir = localdir..backup
-		local fabdir = "/osfab"
-
-		print("make /osfab directory.")
-		do_cmd { "mkdir -p "..fabdir } 
-
-		print("Mount osfab file.")
-		ret = do_cmd { "mount "..backup_dir..osfab.." -t ext2 -o ro,loop "..fabdir } 
-		if not ret then
-			print("Mount osfab file failed.")
-			printMsg("挂载组件映像文件失败！")
-			return -1
-		end
-
-		if not putENV then
-			print("Have no putENV function. Stop.")
-			return -1
-		end
-
-		local s = (resolution or "1024x768"):match("%d+[xX]%d+")
-		-- set three environment variables
-		putENV("MOUNT_POINT="..(localdir or "/mnt"))
-		putENV("MACHINE_TYPE="..(machine or "yeeloong"))
-		putENV("SYSTEM_VERSION="..(version or ""))
-		putENV("RESOLUTION="..(s or "1024x768"))
-
-		lfs.chdir(fabdir)
-
-		print("Install osfab files...")
-		printMsg("正在安装组件……")
-		ret = do_cmd { "bash select_install.sh 1>>"..backup_dir.."log.txt 2>&1" }
-		if not ret then 
-			print("Install components failed.");
-			printMsg("安装组件时出错！")
-			return -1
-		end
-		printMsg("组件安装完成。")
-
-		do_cmd { "echo '============================= END ============================' >> "..backup_dir.."log.txt" }
-	end  
-
-	local tmp_dir = localdir..backup
-	-- backup /mnt/home	
-	lfs.chdir(tmp_dir)
-	ret = do_cmd { "tar czf home_backup.tar.gz "..localdir.."/home" }
-	if not ret then
-		print("Warning! Backup home user data failed.")
-	end
-
-	return 0
-end
-
-
 --===================================================================
 -- START
 --===================================================================
 -- mt.sleep(10)
 do_cmd { "date -s 21990909" }
 do_cmd { "setterm -blank 0" }
+
+-- lfs.mkdir(udisk_dir)
+--
+-- find U disk, mount it, and copy essential files into inner disk
+--
+-- ret = FindAndMountUDisk()
+-- if not ret then print("Mount USB Disk error.") end
+
 
 PrintHead()
 
@@ -660,31 +632,13 @@ if unit == 'M' then
 	real_disksize = real_disksize / 1024;
 end
 
--- script self containing
+-- self containing
 if not printMsg then
 	printMsg = print
 end
 
--- here, need to judge where the vmlinuz boot from
--- we use mounted information to distingash
-local content = GetCMDOutput( "mount" )
-if content:match("/root/udisk") then
-	Cfg.reco_U = true
-elseif content:match("/root/ldisk") then
-	Cfg.reco_D = true
-end
-
-
-if Cfg.reco_U then
-	-- choose files from u disk
-	mount_dir = udisk_dir
-elseif Cfg.reco_D then
-	-- choose files from local disk
-	mount_dir = ldisk_dir
-end
-
 -- load external config file
-local extern_cfg_file = mount_dir..external_config
+local extern_cfg_file = udisk_dir..external_config
 if lfs.attributes(extern_cfg_file) then
 	-- here, if config.txt has error in it, dofile will report error and exit immediately
 	dofile(extern_cfg_file)
@@ -698,7 +652,7 @@ if lfs.attributes(extern_cfg_file) then
 		-- Cfg.files_table
 		collect_info()		
 	else
-		print("The disk size of machine is too small.")
+		print("The disksize specified in config.txt is too big.")
 		printMsg("配置文件中指定的磁盘大小过大（大于实际磁盘容量）！请修改此参数。")
 		return -1
 	end
@@ -717,8 +671,7 @@ if Cfg.premem then
 	if not ret then print("Memory test is failed. Error!"); return -1 end
 end
 
--- check files' md5sum on U disk
-if Cfg.check1 and Cfg.reco_U then
+if Cfg.check1 then
 	-- read md5sum.txt
 	local fd = io.open(udisk_dir.."md5sum.txt", 'r')
 	if not fd then 
@@ -756,12 +709,56 @@ if Cfg.check1 and Cfg.reco_U then
 	end
 end
 
--- Main Work
-local ret = Recover()
-if ret ~= 0 then print("Error when recover."); return -1 end
 
-ret = InstallComponents()
-if ret ~= 0 then print("Error when install components."); return -1 end
+local ret = Recover()
+if ret ~= 0 then print("Error when recover.") return -1 end
+
+print("Next we will install some components, please wait by patience...")
+printMsg("下面安装组件，可能需要几分钟，请耐心等待。")
+-- action for OSFab image
+local osfab = Cfg.OSFAB_NAME
+local machine = Cfg.default_bootcfg.machtype
+local version = Cfg.SYSTEM_VERSION
+local resolution = Cfg.default_bootcfg.res
+local backup_dir = localdir..backup
+local fabdir = "/osfab"
+
+print("make /osfab directory.")
+do_cmd { "mkdir -p "..fabdir } 
+
+print("Mount osfab file.")
+ret = do_cmd { "mount "..backup_dir..osfab.." -t ext2 -o ro,loop "..fabdir } 
+if not ret then
+	print("Mount osfab file failed.")
+	printMsg("挂载组件映像文件失败！")
+	return -1
+end
+
+if not putENV then
+	print("Have no putENV function. Stop.")
+	return -1
+end
+
+local s = (resolution or "1024x768"):match("%d+[xX]%d+")
+-- set three environment variables
+putENV("MOUNT_POINT="..(localdir or "/mnt"))
+putENV("MACHINE_TYPE="..(machine or "yeeloong"))
+putENV("SYSTEM_VERSION="..(version or ""))
+putENV("RESOLUTION="..(s or "1024x768"))
+
+lfs.chdir(fabdir)
+
+print("Install osfab files...")
+printMsg("正在安装组件……")
+ret = do_cmd { "bash select_install.sh 1>>"..backup_dir.."log.txt 2>&1" }
+if not ret then 
+	print("Install components failed.");
+	printMsg("安装组件时出错！")
+	return -1
+end
+printMsg("组件安装完成。")
+
+do_cmd { "echo '============================= END ============================' >> "..backup_dir.."log.txt" }
 
 PrintBigPass()
 return 0

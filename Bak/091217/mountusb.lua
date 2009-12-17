@@ -2,7 +2,6 @@
 
 local rootdir = "/root"
 local udisk_dir = rootdir.."/udisk/"
-local mount_dir
 
 function FindAndMountUDisk()
 	local part
@@ -37,24 +36,11 @@ os.execute("sleep 10")
 os.execute("mkdir  -p "..udisk_dir)
 ret = FindAndMountUDisk()
 if ret ~= 0 then 
-	print("Mount USB Disk error, now turn to check local disk.")
-
-	-- mount the second partition to local_dir
-	local ldisk_dir = rootdir.."/ldisk/"
-	os.execute("mkdir  -p "..ldisk_dir)
-	ret = os.execute("mount -o ro /dev/hda2 "..ldisk_dir)
-	if ret ~= 0 then
-		print("Mount local disk error!")
-		return -1
-	end
-	-- use files on local disk
-	mount_dir = ldisk_dir
-else
-	-- use files on u disk
-	mount_dir = udisk_dir
+	print("Mount USB Disk error."); 
+	return -1
 end
 
--- copy font file to /root/recovery
-os.execute("cp "..mount_dir.."/font.ttf  /root/recovery/")
+-- copy yahei font file to /root/recovery
+os.execute("cp "..udisk_dir.."/font.ttf  /root/recovery/")
 
 return 0
