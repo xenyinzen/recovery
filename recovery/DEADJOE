@@ -1,10 +1,8 @@
 
-*** These modified files were found in JOE when it aborted on Thu Dec 17 13:02:24 2009
+*** These modified files were found in JOE when it aborted on Fri Dec 18 18:25:39 2009
 *** JOE was aborted by UNIX signal 1
 
 *** File '(Unnamed)'
-STK_Window
-return 0
 header_size
 mode
 Cfg
@@ -13,28 +11,30 @@ i
 println
 print
 print
+reco_U
+reco_D
 
 *** File '(Unnamed)'
-STK_MsgBoxCalcDisplayLineWindow
-STK_MsgBoxCalcDisplayLineWindow
-font
-tangg
-mount
-progress
-draw_progressbar
-font
-font
-collect
+collect_info
+home_backup
+GetCMDOutput
+main_i
+Recover
+Recover
+boot_U
+boot_D
+reco_U
+localdir..backup
 
 *** File '(Unnamed)'
+localcfg.lua
 recover.lua
 recover.lua
 recover.lua
-/etc/apt/sources.list
-/etc/network/interfaces
-/etc/apt/sources.list
-run
-/etc/X11/xorg.conf
-1.txt
 recover.lua
-config.txt
+recover.lua
+recover.lua
+recover.lua
+recover.lua
+md5sum.txt
+recover.lua

@@ -19,6 +19,8 @@ local backup = "/backup/"
 local home_backup = "home_backup.tar.gz"
 local MPNUM = 4
 local ret = 0
+local root_i = 0
+local home_i = 0
 
 local sfdisk_prefix = [[
 sfdisk -uM /dev/hda 1>/dev/null 2>&1 <<EOF
@@ -116,10 +118,8 @@ function Recover()
 	
 	-- mount essential partitions to localdir
 	-- mount root fs
-	local main_i = ""
 	for i, v in ipairs(par) do
 		if v[MPNUM] == '/' then
-			main_i = i
 			-- mount root partition
 			ret = do_cmd { "mount "..localdisk..i.." "..localdir }
 			if not ret then print("mount root fs failed."); printMsg("加载根文件系统失败！"); return -1 end
@@ -131,11 +131,24 @@ function Recover()
 		if v[MPNUM] then
 			local subdir = v[MPNUM]
 			if subdir ~= '/' then
-				local dir = localdir..subdir
-				lfs.mkdir(dir)
-				-- mount other partitions
-				ret = do_cmd { "mount "..localdisk..i.." "..dir }
-				if not ret then print("mount other partitions failed."); printMsg("挂载其它分区失败！"); return -1 end
+				local mountP = function ()
+					local dir = localdir..subdir
+					lfs.mkdir(dir)
+					-- mount other partitions
+					ret = do_cmd { "mount "..localdisk..i.." "..dir }
+					if not ret then print("mount other partitions failed."); printMsg("挂载其它分区失败！"); return -1 end
+				end
+				
+				-- if whole recover, we will mount all partitions
+				if Cfg.whole_recover then
+					mountP()
+				-- if system recover, we will not mount user partition
+				elseif Cfg.system_recover and subdir ~= '/home' then
+					mountP()
+				-- if user recover, we will only mount user partition 	
+				elseif Cfg.user_recover and subdir == '/home' then
+					mountP()				
+				end			
 			end
 		end	
 	end	
@@ -157,8 +170,39 @@ function Recover()
 	-- mount tmpfs
 	do_cmd { "mount none -t tmpfs /tmp" }
 	
-	-- if recover from U disk, do copying files here
-	if Cfg.reco_U then
+	-- if user recover, we should backup the original /home partition
+	-- to /mnt/backup/home_backup_tmp.tar.gz firstly
+	if Cfg.user_recover then
+		
+		ret = do_cmd { "tar czf "..tmp_dir.."/home_backup_tmp.tar.gz "..localdir.."/home" }
+		if not ret then 
+			print("Backup original home directory failed.")
+			printMsg("备份用户目录失败。")
+			return -1
+		end
+		ret = do_cmd { "umount "..localdir.."/home" }
+		if not ret then 
+			print("Umount home partition failed.")
+			printMsg("卸载用户分区失败。")
+			return -1
+		end
+		ret = do_cmd { "mkfs.ext3 "..localdisk..home_i }
+		if not ret then 
+			print("Format home partition failed.")
+			printMsg("格式化用户分区失败。")
+			return -1
+		end
+		ret = do_cmd { "mount "..localdisk..home_i.." "..localdir.."/home" }
+		if not ret then 
+			print("Mount home partition failed.")
+			printMsg("挂载用户分区失败。")
+			return -1
+		end
+		
+	end
+	
+	-- if recover from U disk, and is not in user recover mode, do copying files here
+	if Cfg.reco_U and (Cfg.whole_recover or Cfg.system_recover) then
 		-- copy essential files from U disk to local disk
 		print("\n=================== Copy Files =====================")
 		printMsg("拷贝系统文件到磁盘……")
@@ -193,6 +237,9 @@ function Recover()
 		do_cmd { "cp -a config.txt "..tmp_dir }
 		do_cmd { "cp -a boot.cfg "..tmp_dir }
 		do_cmd { "cp -a md5sum.txt "..tmp_dir }
+		if Cfg.whole_recover then
+			do_cmd { "cp -a /root/os_config.txt "..tmp_dir }
+		end
 		do_cmd { "sync" }
 		lfs.chdir( "/" )
 		printMsg("组件映像文件拷贝完成。")
@@ -239,7 +286,18 @@ function Recover()
 			else
 				ret = do_cmd { "bar "..v[1].." | tar xzf - -C "..dir }		
 			end
-			if not ret then print("tar error."); printMsg("解压出错！"); return -1 end
+			if not ret then 
+				-- auto repair mechanism
+				if Cfg.user_recover then
+					do_cmd { "rm -rf "..localdir.."/home/*" }
+					do_cmd { "tar xvf home_backup_tmp.tar.gz -C "..localdir.."/home/" }
+					do_cmd { "sync" }
+				end
+				
+				print("tar error."); 
+				printMsg("解压出错！"); 
+				return -1 
+			end
 		end
 	end	
 
@@ -299,9 +357,9 @@ function Recover()
 		fd:write("default "..(bc.default_boot or 0)..'\n')
 		fd:write("showmenu "..(bc.show_menu or 1)..'\n\n')
 		fd:write("title "..(bc.title or "Lemote System")..'\n')
-		local ch = string.char(string.byte('a') + main_i - 1)
+		local ch = string.char(string.byte('a') + root_i - 1)
 		fd:write("\tkernel /dev/fs/ext2@wd0"..ch.."/boot/vmlinux\n")
-		fd:write("\targs console=tty no_auto_cmd quiet root=/dev/hda"..(main_i or 1).." machtype="..(bc.machtype or "yeeloong").." "..(bc.res or ""))
+		fd:write("\targs console=tty no_auto_cmd quiet root=/dev/hda"..(root_i or 1).." machtype="..(bc.machtype or "yeeloong").." "..(bc.res or ""))
 		fd:close()
 	end
 	
@@ -438,10 +496,8 @@ function collect_info()
 	-- till now, sfdisk_arg has been formed
 	Cfg.sfdisk_arg = args
 	
-	local root_i = 0
-	local home_i = 0
 	for i, v in ipairs(par) do
-		if v[MPNUM] == '/' then	main_i = i end
+		if v[MPNUM] == '/' then	root_i = i end
 		if v[MPNUM] == '/home' then home_i = i end
 	end
 	-- we must consider the partition of /home is the same to /
@@ -497,7 +553,12 @@ function collect_info()
 			Cfg.format_table[i][2] = false
 		end
 		-- if we use user recovery mode, we only format the /home partition
-		if Cfg.user_recover and i ~= home_i then
+		--if Cfg.user_recover and i ~= home_i then
+		--	Cfg.format_table[i][2] = false
+		--end
+		-- we should't format any partition when in user recover mode,
+		-- as to /home partition, we should first backup it, then do format
+		if Cfg.user_recover then
 			Cfg.format_table[i][2] = false
 		end
 		
@@ -533,10 +594,11 @@ function collect_info()
 		end
 	end
 
-	-- check the existance of other useful files in /mnt/backup
+	-- check the existance of other useful files in /root/ldisk
+	-- if recover from local disk, partition 2 has been mounted to /root/ldisk 
 	-- first 'home_backup.tar.gz'
 	if Cfg.user_recover then
-		local file = localdir..backup..home_backup
+		local file = ldisk_dir..home_backup
 		if lfs.attributes(file) then
 			file_count = file_count + 1
 			Cfg.files_table[file_count][1] = home_backup
@@ -628,14 +690,17 @@ function InstallComponents()
 		printMsg("组件安装完成。")
 
 		do_cmd { "echo '============================= END ============================' >> "..backup_dir.."log.txt" }
-	end  
+	end
 
-	local tmp_dir = localdir..backup
-	-- backup /mnt/home	
-	lfs.chdir(tmp_dir)
-	ret = do_cmd { "tar czf home_backup.tar.gz "..localdir.."/home" }
-	if not ret then
-		print("Warning! Backup home user data failed.")
+	-- first time, backup the home data to /backup
+	if Cfg.reco_U and Cfg.whole_recover then
+		local tmp_dir = localdir..backup
+		-- backup /mnt/home	
+		lfs.chdir(tmp_dir)
+		ret = do_cmd { "tar czf home_backup.tar.gz "..localdir.."/home" }
+		if not ret then
+			print("Warning! Backup home user data failed.")
+		end
 	end
 
 	return 0
@@ -707,6 +772,27 @@ else
 	printMsg("无法找到外部配置文件！请检查。")
 	return -1
 end
+
+-- backup the os_config.txt from the backup partition to /root
+if Cfg.reco_U then
+	local num = Cfg.default_partitions.Backup
+	do_cmd { "mount "..localdisk..num.." /mnt/" }
+	do_cmd { "cp /mnt/os_config.txt /root/" }
+	do_cmd { "umount /mnt" }
+end	
+
+--[[
+-- WRONG: Recover from disk will not do partition action
+-- if we don't umount backup partition, it will fail in later partition action.
+if Cfg.reco_D then
+	ret = do_cmd { "umount "..ldisk_dir }
+	if not ret then
+		print("Umount backup partition failed.")
+		printMsg("卸载备份分区失败。")
+		return -1
+	end
+end	
+--]]
 
 --
 -- before recovery, we want a memory test
