@@ -17,7 +17,7 @@ Cfg = {
 	reco_D = false,
 	reco_L = false,
 	
-	whole_recover = false,
+	whole_recover = true,
 	system_recover = false,
 	user_recover = false,
 	

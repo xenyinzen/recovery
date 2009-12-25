@@ -42,7 +42,8 @@ if ret ~= 0 then
 	-- mount the second partition to local_dir
 	local ldisk_dir = rootdir.."/ldisk/"
 	os.execute("mkdir  -p "..ldisk_dir)
-	ret = os.execute("mount -o ro /dev/hda2 "..ldisk_dir)
+--	ret = os.execute("mount -o ro /dev/hda2 "..ldisk_dir)
+	ret = os.execute("mount /dev/hda2 "..ldisk_dir)
 	if ret ~= 0 then
 		print("Mount local disk error!")
 		return -1

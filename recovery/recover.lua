@@ -96,23 +96,20 @@ function Recover()
 	print("\n==================== Do Format =====================")
 	printMsg("开始格式化……")
 	for i, v in pairs(faction) do
-		io.write('--> '..v[1].." ... "); io.flush()
-		if Cfg.verbose then
-			-- if permit format
-			if v[2] then
+		if v[2] then 
+			io.write('--> '..v[1].." ... "); io.flush()
+			if Cfg.verbose then
 				ret = do_cmd { v[1] }
-			end
-		else
-			if v[2] then
+			else
 				ret = do_cmd { v[1]..HO }
 			end
+			if not ret then
+				print("Error! Some error occured when format.")
+				printMsg("格式化时出错！")
+				return -1
+			end
+			io.write("OK.\n")
 		end
-		if not ret then
-			print("Error! Some error occured when format.")
-			printMsg("格式化时出错！")
-			return -1
-		end
-		io.write("OK.\n")
 	end
 	printMsg("格式化完成。")
 	
@@ -165,6 +162,7 @@ function Recover()
 		ret = do_cmd { "mount "..backupdev.." "..tmp_dir }
 		if not ret then 
 			print("mount backup device failed. oh...");
+			return -1
 		end
 	end
 	-- mount tmpfs
@@ -220,20 +218,26 @@ function Recover()
 			end
 		end
 		if not ret then print("Copying data file error!"); printMsg("拷贝系统文件时出错！"); return -1 end
-		
+		printMsg("系统文件拷贝完成。")
+	
 		local osfab = Cfg.OSFAB_NAME or "OSFab.img"
-		print("Copy osfab file.")
-		printMsg("拷贝组件映像文件到磁盘……")
-		lfs.chdir( udisk_dir )
-		ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' "..osfab }
-		if not ret then
-			print("copy osfab failed.")
-			printMsg("拷贝组件映像文件失败！")
-			return -1
+		if Cfg.OSFAB_NAME and Cfg.OSFAB_NAME ~= "" and lfs.attributes(udisk_dir..osfab) then
+			print("Copy osfab file.")
+			printMsg("拷贝组件映像文件到磁盘……")
+			lfs.chdir( udisk_dir )
+			ret = do_cmd { "bar -c 'cat > "..tmp_dir.."${bar_file}' "..osfab }
+			if not ret then
+				print("copy osfab failed.")
+				printMsg("拷贝组件映像文件失败！")
+				return -1
+			end
+			printMsg("组件映像文件拷贝完成。")
 		end
+		
 		-- copy vmlinux, config.txt, boot.cfg and other files to disk
 		do_cmd { "cp -a vmlinux "..tmp_dir }
 		do_cmd { "cp -a vmlinuz "..tmp_dir }
+		do_cmd { "cp -a font.ttf "..tmp_dir }
 		do_cmd { "cp -a config.txt "..tmp_dir }
 		do_cmd { "cp -a boot.cfg "..tmp_dir }
 		do_cmd { "cp -a md5sum.txt "..tmp_dir }
@@ -242,7 +246,6 @@ function Recover()
 		end
 		do_cmd { "sync" }
 		lfs.chdir( "/" )
-		printMsg("组件映像文件拷贝完成。")
 		
 		-- Umount the usb disk.
 		ret = do_cmd { "umount "..udisk_dir }
@@ -260,16 +263,18 @@ function Recover()
 	
 	-- calculate actual md5sum value, now files are all in local disk
 	if Cfg.check2 then
-		io.write("\n--> Now check the md5sum of files on local disk... "); io.flush()
-		printMsg("检查本地磁盘上的文件……")
-		ret = check_md5sum('./')
-		if ret ~= 0 then 
-			io.write("Error when check md5sum of files. \n")
-			printMsg("文件md5sum值校验出错。")
-			return -1
-		else
-			io.write("OK.\n")	
-			printMsg("文件检查完成。")
+		if #md5sum_t > 0 then
+			io.write("\n--> Now check the md5sum of files on local disk... "); io.flush()
+			printMsg("检查本地磁盘上的文件……")
+			ret = check_md5sum('./')
+			if ret ~= 0 then 
+				io.write("Error when check md5sum of files. \n")
+				printMsg("文件md5sum值校验出错。")
+				return -1
+			else
+				io.write("OK.\n")	
+				printMsg("文件检查完成。")
+			end
 		end
 	end
 	
@@ -311,6 +316,10 @@ function Recover()
 	-- generate fstab
 	print("Next we generate fstab file.")
 	local fd = io.open(localdir.."/etc/fstab", "w")
+	if not fd then
+		print("Error! Can't open etc/fstab.")
+		return -1
+	end
 	fd:write("#<file system>\t<mount point>\t<type>\t<options>\t<dump>\t<pass>\n")
 
 	for i, v in ipairs(par) do
@@ -642,10 +651,8 @@ function collect_info()
 end
 
 function InstallComponents()
-	-- now, we define only in the case of whold recover, it needs to install components
-	if Cfg.whole_recover then
-		print("Next we will install some components, please wait by patience...")
-		printMsg("下面安装组件，可能需要几分钟，请耐心等待。")
+	-- now, we define in the case of whole and system recover, it needs to install components
+	if Cfg.whole_recover or Cfg.system_recover then
 		-- action for OSFab image
 		local osfab = Cfg.OSFAB_NAME
 		local machine = Cfg.default_bootcfg.machtype
@@ -654,42 +661,47 @@ function InstallComponents()
 		local backup_dir = localdir..backup
 		local fabdir = "/osfab"
 
-		print("make /osfab directory.")
-		do_cmd { "mkdir -p "..fabdir } 
+		if osfab and osfab ~= "" and lfs.attributes(backup_dir..osfab) then
+			print("Next we will install some components, please wait by patience...")
+			printMsg("下面安装组件，可能需要几分钟，请耐心等待。")
+		
+			print("make /osfab directory.")
+			do_cmd { "mkdir -p "..fabdir } 
 
-		print("Mount osfab file.")
-		ret = do_cmd { "mount "..backup_dir..osfab.." -t ext2 -o ro,loop "..fabdir } 
-		if not ret then
-			print("Mount osfab file failed.")
-			printMsg("挂载组件映像文件失败！")
-			return -1
+			print("Mount osfab file.")
+			ret = do_cmd { "mount "..backup_dir..osfab.." -t ext2 -o ro,loop "..fabdir } 
+			if not ret then
+				print("Mount osfab file failed.")
+				printMsg("挂载组件映像文件失败！")
+				return -1
+			end
+
+			if not putENV then
+				print("Have no putENV function. Stop.")
+				return -1
+			end
+
+			local s = (resolution or "1024x768"):match("%d+[xX]%d+")
+			-- set three environment variables
+			putENV("MOUNT_POINT="..(localdir or "/mnt"))
+			putENV("MACHINE_TYPE="..(machine or "yeeloong"))
+			putENV("SYSTEM_VERSION="..(version or ""))
+			putENV("RESOLUTION="..(s or "1024x768"))
+
+			lfs.chdir(fabdir)
+
+			print("Install osfab files...")
+			printMsg("正在安装组件……")
+			ret = do_cmd { "bash select_install.sh 1>>"..backup_dir.."log.txt 2>&1" }
+			if not ret then 
+				print("Install components failed.");
+				printMsg("安装组件时出错！")
+				return -1
+			end
+			printMsg("组件安装完成。")
+
+			do_cmd { "echo '============================= END ============================' >> "..backup_dir.."log.txt" }
 		end
-
-		if not putENV then
-			print("Have no putENV function. Stop.")
-			return -1
-		end
-
-		local s = (resolution or "1024x768"):match("%d+[xX]%d+")
-		-- set three environment variables
-		putENV("MOUNT_POINT="..(localdir or "/mnt"))
-		putENV("MACHINE_TYPE="..(machine or "yeeloong"))
-		putENV("SYSTEM_VERSION="..(version or ""))
-		putENV("RESOLUTION="..(s or "1024x768"))
-
-		lfs.chdir(fabdir)
-
-		print("Install osfab files...")
-		printMsg("正在安装组件……")
-		ret = do_cmd { "bash select_install.sh 1>>"..backup_dir.."log.txt 2>&1" }
-		if not ret then 
-			print("Install components failed.");
-			printMsg("安装组件时出错！")
-			return -1
-		end
-		printMsg("组件安装完成。")
-
-		do_cmd { "echo '============================= END ============================' >> "..backup_dir.."log.txt" }
 	end
 
 	-- first time, backup the home data to /backup
@@ -781,9 +793,8 @@ if Cfg.reco_U then
 	do_cmd { "umount /mnt" }
 end	
 
---[[
--- WRONG: Recover from disk will not do partition action
--- if we don't umount backup partition, it will fail in later partition action.
+-- WRONG: Recover backup partition from disk will not do partition action
+-- if we don't umount backup partition, it will fail in later mount action.
 if Cfg.reco_D then
 	ret = do_cmd { "umount "..ldisk_dir }
 	if not ret then
@@ -792,7 +803,6 @@ if Cfg.reco_D then
 		return -1
 	end
 end	
---]]
 
 --
 -- before recovery, we want a memory test
