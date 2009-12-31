@@ -211,13 +211,15 @@ function Recover()
 	lfs.chdir(tmp_dir)
 	-- delete files on backup partition
 	if (Cfg.reco_U or Cfg.reco_N) and Cfg.system_recover then
-		for i, v in pairs(files) do
-			do_cmd { "rm -rf "..v[1] }
-		end
-	
-		local osfab = Cfg.OSFAB_NAME or "OSFab.img"
-		if Cfg.OSFAB_NAME and Cfg.OSFAB_NAME ~= "" then
-			ret = do_cmd { "rm -rf "..osfab }
+		for file in lfs.dir(".") do
+			if file == '.'
+			or file == '..'
+			or file == home_backup
+			then
+				-- nothing 
+			else
+				do_cmd { "rm -rf "..file }
+			end
 		end
 	end
 	lfs.chdir('-')
