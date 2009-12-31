@@ -3,6 +3,11 @@ Tang Gang
 tangg@lemote.com
 =====================================================================
 
+1.1.0 changes (2009-12-24 22:00)
+	1. add hard disk recover method;
+	2. add support for the case of missing OSFab file;
+
+---------------------------------------------------------------------
 1.0.0 changes (2009-12-14 9:30)
 	1. hide the 'exit' button while recover;
 	2. modified the md5sum check method;

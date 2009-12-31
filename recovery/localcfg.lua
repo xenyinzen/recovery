@@ -15,13 +15,14 @@ Cfg = {
 	
 	reco_U = false,
 	reco_D = false,
-	reco_L = false,
+	reco_N = false,
 	
 	whole_recover = true,
 	system_recover = false,
 	user_recover = false,
 	
 	new_partition = false,
+	new_format = true,
 	
 	disksize = 60,
 	premem = false,
@@ -29,6 +30,8 @@ Cfg = {
 	check2 = true,
 	verbose = false,
 	clean = false,
+	
+	autostart = false,
 	
 	sfdisk_arg = [[]],
 	format_table = {},

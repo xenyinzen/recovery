@@ -24,7 +24,8 @@ Cfg.default_partitions = Cfg.partitions
 -- Other configuration
 -- 
 ----------------------------------------------------------------
-Cfg.SYSTEM_NAME = "Cocreate Linux Desktop for Loongson 1.66"
+Cfg.SYSTEM_NAME = "Cocreate Linux Desktop for Loongson"
+Cfg.SYSTEM_NUM = "1.7.1"
 Cfg.OSFAB_NAME = "OSFab-20091204.img"
 Cfg.SYSTEM_VERSION = "edu"
-
+Cfg.SEVER_IP = "172.16.20.99"
