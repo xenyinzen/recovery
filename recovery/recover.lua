@@ -61,6 +61,16 @@ function check_md5sum(dir)
 	return 0
 end
 
+function GetIPs()
+	local fd = io.open("/proc/cmdline", "r")
+	local content = fd:read("*a")
+	local ip = content:match("IP=(%d+%.%d+%.%d+%.%d+)")
+	local sip = content:match("SIP=(%d+%.%d+%.%d+%.%d+)")
+	fd:close()
+	
+	return ip, sip
+end
+
 function Recover()
 	local par = Cfg.default_partitions
 	local sfarg = Cfg.sfdisk_arg
@@ -71,6 +81,28 @@ function Recover()
 		print("Error! Nil parameters are passed in Recover.")
 		printMsg("传递给还原程序的参数错误，可能是配置文件格式不正确。")
 		return -1
+	end
+	
+	if Cfg.reco_U then
+		print("We will recover from U disk.")
+		printMsg("本次还原从U盘还原。")
+	elseif Cfg.reco_D then
+		print("We will recover from hard disk")
+		printMsg("本次还原从硬盘还原。")
+	elseif Cfg.reco_N then
+		print("We will recover from network.")
+		printMsg("本次还原从网络还原。")
+	end
+	
+	if Cfg.whole_recover then
+		print("We will do whole recover.")
+		printMsg("本次还原为全盘整体还原。")
+	elseif Cfg.system_recover then
+		print("We will do system recover.")
+		printMsg("本次还原为系统数据区还原。")
+	elseif Cfg.user_recover then
+		print("We will do user recover.")
+		printMsg("本次还原为用户数据区还原。")
 	end
 	
 	-- if boot from U disk
@@ -174,6 +206,7 @@ function Recover()
 	-- to /mnt/backup/home_backup_tmp.tar.gz firstly
 	if Cfg.user_recover then
 		
+		--[[
 		print("Before user data recovery, we create a temporary backup package.")
 		printMsg("在用户数据还原开始之前，我们创建一个临时备份包……")
 		lfs.chdir(localdir)
@@ -184,6 +217,7 @@ function Recover()
 			return -1
 		end
 		lfs.chdir('-')
+		--]]
 		
 		ret = do_cmd { "umount "..localdir.."/home" }
 		if not ret then 
@@ -260,7 +294,6 @@ function Recover()
 		end
 		
 		-- copy vmlinux, config.txt, boot.cfg and other files to disk
-		do_cmd { "cp -a vmlinux "..tmp_dir }
 		do_cmd { "cp -a vmlinuz "..tmp_dir }
 		do_cmd { "cp -a font.ttf "..tmp_dir }
 		do_cmd { "cp -a config.txt "..tmp_dir }
@@ -285,7 +318,7 @@ function Recover()
 		end
 	end
 
-	-- stuff recover from network
+	-- stuff about recover from network
 	if Cfg.reco_N and (Cfg.whole_recover or Cfg.system_recover) then
 		-- search ethernet device, and open it
 		local content = GetCMDOutput( "ifconfig -a" )
@@ -300,9 +333,11 @@ function Recover()
 			return -1
 		end
 		-- get and set local IP
-		local iplocal = "172.16.18.100" -- temporary
+		local ip, sip = GetIPs()
+		if not ip then ip = "192.168.1.101" end
+		if not sip then sip = "192.168.1.100" end
 		
-		do_cmd { "ifconfig "..ethdev.." "..iplocal }
+		do_cmd { "ifconfig "..ethdev.." "..ip }
 		
 		ret = lfs.chdir(tmp_dir)
 		if not ret then 
@@ -310,18 +345,18 @@ function Recover()
 			printMsg("切换到备份目录失败！")
 			return -1 
 		end
-		-- down files from server IP and default direcotry
-		-- base
-		local server = Cfg.SERVER_IP or "192.168.1.100"
 		
+		local server_dir = "/recovery/latest/"
 		-- down system files
 		for i, v in pairs(files) do
 			local basefile = v[1]
-			local urlstr = "http://"..server.."/OSes/"..basefile;
+			local urlstr = "ftp://"..sip..server_dir..basefile;
 			
+			printMsg("下载文件："..basefile)
 			ret = do_cmd { "axel_daogang -n 1 "..urlstr }
 			if not ret then
 				print("Down file "..basefile.." failed.")
+				printMsg("下载文件："..basefile.."失败。")
 				return -1
 			end
 		end
@@ -329,16 +364,18 @@ function Recover()
 		-- down component files
 		if Cfg.OSFAB_NAME and Cfg.OSFAB_NAME ~= "" then
 			local comfile = Cfg.OSFAB_NAME
-			urlstr = "http://"..server.."/OSFab/"..comfile;
+			urlstr = "ftp://"..sip..server_dir..comfile;
+			
+			printMsg("下载文件："..comfile)			
 			ret = do_cmd { "axel_daogang -n 1 "..urlstr }
 			if not ret then
 				print("Down file "..comfile.." failed.")
+				printMsg("下载文件："..comfile.."失败。")				
 				return -1
 			end
 		end
 
 		local other_files = {
-			"vmlinux",
 			"vmlinuz",
 			"font.ttf",
 			"config.txt",
@@ -346,16 +383,15 @@ function Recover()
 		}
 		-- down other files
 		for i, v in pairs(other_files) do
-			local basefile = v
-			local urlstr = "http://"..server.."/OSes/"..basefile;
-			
+			local urlstr = "ftp://"..sip..server_dir..v;
+
+			printMsg("下载文件："..v)						
 			ret = do_cmd { "axel_daogang -n 1 "..urlstr }
-			--[[ -- we don't check the correction of result
 			if not ret then
-				print("Down file "..basefile.." failed.")
+				print("Down file "..v.." failed.")
+				printMsg("下载文件："..v.."失败。")								
 				return -1
 			end
-			--]]
 		end
 	
 		-- restore original system os_config.txt 
@@ -405,11 +441,13 @@ function Recover()
 			end
 			if not ret then 
 				-- auto repair mechanism
+				--[[
 				if Cfg.user_recover then
 					do_cmd { "rm -rf "..localdir.."/home/*" }
 					do_cmd { "tar xf home_backup_tmp.tar.gz -C "..localdir }
 					do_cmd { "sync" }
 				end
+				--]]
 				
 				print("tar error."); 
 				printMsg("解压出错！"); 
@@ -554,6 +592,47 @@ function collect_info()
 	local r_format_types = {}
 	for _, v in ipairs(Cfg.format_types) do
 		r_format_types[v] = true		
+	end
+	
+	if Cfg.reco_N then	
+		-- search ethernet device, and open it
+		local content = GetCMDOutput( "ifconfig -a" )
+		local ethdev = content:match("eth[%w_]+")
+		if not ethdev then
+			print("Can't find ethernet device.")
+			return -1		
+		end
+		ret = do_cmd { "ifconfig "..ethdev.." up " }
+		if not ret then
+			print("Can't open ethernet device.")
+			return -1
+		end
+
+		-- get and set local IP
+		local ip, sip = GetIPs()
+		if not ip then ip = "192.168.1.101" end
+		if not sip then sip = "192.168.1.100" end
+		
+		do_cmd { "ifconfig "..ethdev.." "..ip }
+		-- remove the old config.txt in /root/recovery/
+		do_cmd { "rm ./config.txt" }
+				
+		local server_dir = "/recovery/latest/"
+		-- down system files
+		local file = "config.txt"
+		local urlstr = "ftp://"..sip..server_dir..file;
+
+		printMsg("下载配置文件……")
+		ret = do_cmd { "axel_daogang -n 1 "..urlstr }
+		if not ret then
+			print("Down file "..file.." failed.")
+			printMsg("下载配置文件："..file.."失败。")
+			return -1
+		end
+		printMsg("配置文件下载成功。")		
+		
+		-- import new config.txt file
+		dofile("./config.txt")
 	end
 	
 	-- arguments check
@@ -911,7 +990,6 @@ else
 		Cfg.system_recover = false
 		Cfg.user_recover = false
 	end
-
 end
 
 -- if external disksize is smaller than internal disksize, go ahead normally

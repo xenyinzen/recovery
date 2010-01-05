@@ -35,7 +35,7 @@ end
 --
 -- find U disk, mount it, and copy essential files into inner disk
 --
-os.execute("sleep 10")
+os.execute("sleep 6")
 os.execute("mkdir  -p "..udisk_dir)
 os.execute("mkdir  -p "..ldisk_dir)
 os.execute("mkdir  -p "..ndisk_dir)

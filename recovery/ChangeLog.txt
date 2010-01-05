@@ -3,6 +3,22 @@ Tang Gang
 tangg@lemote.com
 =====================================================================
 
+1.3.0 changes (2010-01-04 15:00)
+	1. add support for recovery from network (FTP).
+
+---------------------------------------------------------------------
+1.2.1 changes (2010-01-03 15:00)
+	1. add some prompts before recovery starts;
+	2. remove the auto repair mechanism when do user recovery.
+	
+---------------------------------------------------------------------
+1.2.0 changes (2010-01-03 10:00)
+	1. add autostart recovery;
+	2. add professional user configuration interface;
+	3. add a new flag file: autostart.txt, and defined its format;
+	4. add support for Jingdongfang LCD in kernel;
+	
+---------------------------------------------------------------------
 1.1.0 changes (2009-12-24 22:00)
 	1. add hard disk recover method;
 	2. add support for the case of missing OSFab file;
