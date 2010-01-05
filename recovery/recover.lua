@@ -295,7 +295,6 @@ function Recover()
 		
 		-- copy vmlinux, config.txt, boot.cfg and other files to disk
 		do_cmd { "cp -a vmlinuz "..tmp_dir }
-		do_cmd { "cp -a font.ttf "..tmp_dir }
 		do_cmd { "cp -a config.txt "..tmp_dir }
 		do_cmd { "cp -a boot.cfg "..tmp_dir }
 		do_cmd { "cp -a /root/os_config.txt "..tmp_dir }
@@ -377,7 +376,6 @@ function Recover()
 
 		local other_files = {
 			"vmlinuz",
-			"font.ttf",
 			"config.txt",
 			"boot.cfg",
 		}
@@ -586,14 +584,6 @@ end
 
 function collect_info()
 
-	local par = Cfg.default_partitions
-	local args = ""
-	
-	local r_format_types = {}
-	for _, v in ipairs(Cfg.format_types) do
-		r_format_types[v] = true		
-	end
-	
 	if Cfg.reco_N then	
 		-- search ethernet device, and open it
 		local content = GetCMDOutput( "ifconfig -a" )
@@ -633,6 +623,16 @@ function collect_info()
 		
 		-- import new config.txt file
 		dofile("./config.txt")
+	end
+
+	-------------------------------------------------------------------
+	-- start parse parameters
+	local par = Cfg.default_partitions
+	local args = ""
+	
+	local r_format_types = {}
+	for _, v in ipairs(Cfg.format_types) do
+		r_format_types[v] = true		
 	end
 	
 	-- arguments check
@@ -959,13 +959,6 @@ if not printMsg then
 	printMsg = print
 end
 
--- ensure Cfg have values
-if not Cfg then
-	print("Can't load global configuration, please check this file: config.txt.")
-	printMsg("无法找到全局配置变量！请检查config.txt文件。")
-	return -1
-end
-
 -- here, need to judge where the vmlinuz boot from
 -- we use mounted information to distinguish
 if Cfg.reco_N then
@@ -989,6 +982,15 @@ else
 		Cfg.whole_recover = true
 		Cfg.system_recover = false
 		Cfg.user_recover = false
+	end
+end
+
+-- ensure Cfg have values
+if Cfg.reco_U or Cfg.reco_D then
+	if not Cfg.default_partitions then
+		print("Can't load global configuration, please check this file: config.txt.")
+		printMsg("无法找到全局配置变量！请检查config.txt文件。")
+		return -1
 	end
 end
 

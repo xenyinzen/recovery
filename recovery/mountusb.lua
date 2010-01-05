@@ -58,8 +58,7 @@ else
 	mount_dir = udisk_dir
 end
 
--- copy font and other files to /root/recovery
-os.execute("cp "..mount_dir.."/font.ttf  /root/recovery/")
+-- copy other files to /root/recovery
 os.execute("cp "..mount_dir.."/autostart.txt  /root/recovery/")
 
 return 0
